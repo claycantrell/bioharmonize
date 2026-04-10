@@ -7,10 +7,12 @@ build/
 .pytest_cache/
 *.egg
 
-# Gas Town (added by gt)
+# Gas Town / AI agent infrastructure
 .runtime/
 .claude/
 .logs/
+.beads/
 state.json
 CLAUDE.md
 CLAUDE.local.md
+AGENTS.md
