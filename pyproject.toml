@@ -27,7 +27,7 @@ dependencies = ["pandas>=1.5"]
 [project.optional-dependencies]
 anndata = ["anndata>=0.8"]
 cli = ["click>=8.0"]
-dev = ["pytest>=7.0", "anndata>=0.8", "click>=8.0"]
+dev = ["pytest>=7.0", "anndata>=0.8", "click>=8.0", "hypothesis>=6.0"]
 
 [project.scripts]
 bioharmonize = "bioharmonize.cli:main"

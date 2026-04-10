@@ -91,9 +91,13 @@ def run_validation(
             )
         )
 
+    has_dupes = df.columns.duplicated().any()
+
     # dtype checks for canonical columns
     for col_name, spec in profile.canonical_columns.items():
         if col_name not in df.columns:
+            continue
+        if has_dupes and isinstance(df[col_name], pd.DataFrame):
             continue
         series = df[col_name]
         if spec.dtype in ("string", "categorical") and pd.api.types.is_numeric_dtype(series):
@@ -149,6 +153,8 @@ def run_validation(
     for col_name, normalizer in profile.value_normalizers.items():
         if col_name not in df.columns:
             continue
+        if has_dupes and isinstance(df[col_name], pd.DataFrame):
+            continue
         series = df[col_name].dropna()
         if series.empty:
             continue
@@ -181,6 +187,8 @@ def run_validation(
     # -- strict checks --
     for col_name, spec in profile.canonical_columns.items():
         if col_name not in df.columns:
+            continue
+        if has_dupes and isinstance(df[col_name], pd.DataFrame):
             continue
         if not spec.nullable:
             n_null = int(df[col_name].isna().sum())
@@ -215,6 +223,8 @@ def run_validation(
     # flag unknown values in normalized columns
     for col_name, normalizer in profile.value_normalizers.items():
         if col_name not in df.columns:
+            continue
+        if has_dupes and isinstance(df[col_name], pd.DataFrame):
             continue
         series = df[col_name].dropna()
         if series.empty:
