@@ -7,6 +7,7 @@ import pandas as pd
 
 from .changes import Change
 from .issues import Issue
+from .preflight import TaskProfile, resolve_task, run_preflight
 from .profiles import Profile, resolve_profile
 from .report import Report
 from .validators import run_validation
@@ -361,25 +362,37 @@ def repair(
 
 def preflight(
     data: ObsData,
-    *,
-    profile: str | Profile = "single_cell_human",
-    column_map: dict[str, str] | None = None,
-    value_maps: dict[str, dict[str, str]] | None = None,
-    validation: str = "standard",
+    task: str | TaskProfile,
 ) -> Report:
-    """Dry-run of :func:`repair` — shows planned changes without modifying data.
+    """Check whether a dataset is ready for a downstream analysis task.
 
-    Returns a Report whose ``cleaned`` holds the *repaired* preview (always a
-    copy) and whose ``changes`` / ``issues`` match what ``repair`` would produce.
-    The original *data* is never modified.
+    Runs task-specific preflight checks (required columns, recommended columns,
+    data quality) and returns a Report with the issues found.
+
+    Parameters
+    ----------
+    data : AnnData or DataFrame
+        The dataset to check.
+    task : str or TaskProfile
+        Name of a built-in task ('clustering', 'differential_expression',
+        'integration', 'cell_type_annotation') or a custom TaskProfile.
+
+    Returns
+    -------
+    Report
+        A report where ``issues`` contains preflight findings and ``cleaned``
+        is the unmodified input DataFrame.
     """
-    return repair(
-        data,
-        profile=profile,
-        column_map=column_map,
-        value_maps=value_maps,
-        validation=validation,
-        copy=True,
+    obs, source_adata = _extract_obs(data)
+    tp = resolve_task(task)
+    issues = run_preflight(obs, tp)
+    return Report(
+        cleaned=obs,
+        issues=issues,
+        changes=[],
+        profile_name=f"preflight:{tp.name}",
+        validation_level="preflight",
+        adata=source_adata,
     )
 
 
