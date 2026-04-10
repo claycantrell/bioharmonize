@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/preflight.py
+# hypothesis_version: 6.151.12
+
+[1.0, 1000, ', ', 'EMPTY_X_MATRIX', 'EXISTING_ANNOTATION', 'INSUFFICIENT_GROUPS', 'LOW_CELLS_PER_BATCH', 'LOW_CELL_COUNT', 'LOW_REPLICATES', 'MISSING_X_MATRIX', 'NO_COUNTS_LAYER', 'SINGLE_BATCH', 'X_APPEARS_RAW', 'X_NOT_RAW_COUNTS', 'X_SPARSITY', 'assay', 'batch_id', 'cell_type', 'cell_type_annotation', 'clustering', 'condition', 'counts', 'dense', 'donor_id', 'error', 'info', 'integration', 'sample_id', 'species', 'tissue', 'warning']

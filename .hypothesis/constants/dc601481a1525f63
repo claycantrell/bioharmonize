@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/validators.py
+# hypothesis_version: 6.151.12
+
+['DUPLICATE_COLUMNS', 'DUPLICATE_INDEX', 'EMPTY_DATAFRAME', 'INVALID_VALUE', 'MIXED_VOCABULARY', 'NULL_IN_NON_NULLABLE', 'SUSPICIOUS_COLUMN', 'UNEXPECTED_DTYPE', 'UNMAPPED_VALUES', '[\\s\\-]+', '_', 'categorical', 'error', 'float', 'integer', 'minimal', 'standard', 'strict', 'string', 'warning']

@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/issues.py
+# hypothesis_version: 6.151.12
+
+['error', 'info', 'warning']

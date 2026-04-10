@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/sanity.py
+# hypothesis_version: 6.151.12
+
+[0.5, 'ALL_ZERO_FEATURES', 'COULD_BE_CATEGORICAL', 'DUPLICATE_CELL_IDS', 'EMPTY_FEATURE_NAMES', 'INDEX_WHITESPACE', 'LAYER_SHAPE_MISMATCH', 'NULL_FEATURE_NAMES', 'NULL_INDEX_VALUES', 'UNUSED_CATEGORIES', 'all_zero_columns', 'categorical_encoding', 'categories', 'duplicate_cell_ids', 'error', 'index_hygiene', 'info', 'layer_presence', 'missing_features', 'obs_matrix_shape', 'warning']

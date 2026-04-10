@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/report.py
+# hypothesis_version: 6.151.12
+
+['  changes:', '  issues:', '  task readiness:', 'after', 'before', 'changes.csv', 'cleaned.csv', 'code', 'coerce_dtype', 'column', 'count', 'error', 'info', 'issues.csv', 'kind', 'message', 'normalize_value', 'not_ready', 'ready', 'rename_column', 'row_count', 'severity', 'standard', 'suggestion', 'summary.txt', 'warning']

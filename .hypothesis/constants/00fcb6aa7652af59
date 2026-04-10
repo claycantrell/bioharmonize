@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/io.py
+# hypothesis_version: 6.151.12
+
+['.csv', '.h5', '.h5ad', '.tsv', '.txt', 'anndata.AnnData', 'utf-8-sig']

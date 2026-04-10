@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/api.py
+# hypothesis_version: 6.151.12
+
+[500, '(index)', 'ALIAS_CONFLICT', 'COLUMN_CONFLICT', 'DATASET_LAYERS', 'DATASET_SHAPE', 'DATA_STATE', 'Float64', 'Int64', 'OBS_COLUMNS', 'OBS_MISSINGNESS', 'POSSIBLE_ALIAS', 'VAR_COLUMNS', '[\\s\\-]+', '_', 'anndata.AnnData', 'categorical', 'cell_0', 'cell_0..cell_{0}', 'coerce_dtype', 'deduplicate_index', 'empty', 'empty (all NaN/Inf)', 'error', 'float', 'generate_index', 'info', 'integer', 'integer index', 'minimal', 'normalize_value', 'preflight', 'raise', 'rename_column', 'single_cell_human', 'standard', 'string', 'strip_index', 'stripped', 'warning']

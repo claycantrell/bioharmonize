@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/profiles.py
+# hypothesis_version: 6.151.12
+
+['Batch identifier', 'Biological sex', 'Cell type annotation', 'Disease name', 'Sample identifier', 'Sequencing platform', 'Species', 'assay', 'batch_id', 'cell_type', 'condition', 'disease', 'donor_id', 'female', 'male', 'platform', 'sample_id', 'sex', 'single_cell_human', 'species', 'standard', 'strict', 'string', 'tissue', 'unknown']

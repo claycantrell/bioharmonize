@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/normalizers.py
+# hypothesis_version: 6.151.12
+
+['10x', "10x 3'", "10x 5'", '10x genomics', 'assay', 'case', 'condition', 'control', 'ctrl', 'disease', 'f', 'female', 'healthy', 'm', 'male', 'sex', 'smart-seq2', 'smartseq2', 'unknown']

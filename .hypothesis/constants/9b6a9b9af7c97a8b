@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/aliases.py
+# hypothesis_version: 6.151.12
+
+['annotation', 'batch', 'batch_id', 'cell_type', 'cell_type_annotation', 'celltype', 'condition', 'disease_status', 'donor', 'donor_id', 'gender', 'organ', 'patient', 'sample', 'sample_id', 'sex', 'status', 'tissue']

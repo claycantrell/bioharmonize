@@ -1,0 +1,4 @@
+# file: /Users/a12066/gt/bioharmonize/polecats/obsidian/bioharmonize/bioharmonize/cli.py
+# hypothesis_version: 6.151.12
+
+['--clean/--no-clean', '--level', '--output', '--profile', '--validation', '-o', '.', '.h5ad', 'Output .h5ad path', 'Output directory', 'Validation level', '_harmonized.h5ad', 'cleaned.h5ad', 'error', 'minimal', 'path', 'repair', 'repaired.h5ad', 'single_cell_human', 'standard', 'strict', 'task']
