@@ -51,11 +51,15 @@ def clean_obs(
         if col in rename_map:
             continue
         normed = _normalize_col_name(col)
-        # Already a canonical name
+        # Already a canonical name (exact match)
         if normed in canonical_names and normed == col:
             continue
-        # Check alias
-        target = alias_lookup.get(normed)
+        # Normalized form matches a canonical name (e.g. "cell type" -> "cell_type")
+        if normed in canonical_names and normed != col:
+            target = normed
+        else:
+            # Check alias
+            target = alias_lookup.get(normed)
         if target is None:
             # Also try exact match on original name
             target = alias_lookup.get(col.lower().strip())
@@ -93,6 +97,9 @@ def clean_obs(
     for col_name, normalizer in all_normalizers.items():
         if col_name not in result.columns:
             continue
+        # Skip duplicated columns (already flagged in validation)
+        if result.columns.duplicated().any() and isinstance(result[col_name], pd.DataFrame):
+            continue
         series = result[col_name]
         mask = series.notna()
         if not mask.any():
@@ -119,6 +126,9 @@ def clean_obs(
     # -- step 3: coerce dtypes --
     for col_name, spec in prof.canonical_columns.items():
         if col_name not in result.columns:
+            continue
+        # Skip duplicated columns (already flagged in validation)
+        if result.columns.duplicated().any() and isinstance(result[col_name], pd.DataFrame):
             continue
         series = result[col_name]
         old_dtype = str(series.dtype)
