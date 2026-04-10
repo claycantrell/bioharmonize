@@ -6,6 +6,7 @@ import pandas as pd
 
 from .changes import Change
 from .issues import Issue
+from .preflight import TaskProfile, resolve_task, run_preflight
 from .profiles import Profile, resolve_profile
 from .report import Report
 from .validators import run_validation
@@ -187,4 +188,38 @@ def validate_obs(
         changes=[],
         profile_name=prof.name,
         validation_level=level,
+    )
+
+
+def preflight(
+    df: pd.DataFrame,
+    task: str | TaskProfile,
+) -> Report:
+    """Check whether a DataFrame is ready for a downstream analysis task.
+
+    Runs task-specific preflight checks (required columns, recommended columns,
+    data quality) and returns a Report with the issues found.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The obs DataFrame to check.
+    task : str or TaskProfile
+        Name of a built-in task ('clustering', 'differential_expression',
+        'integration', 'cell_type_annotation') or a custom TaskProfile.
+
+    Returns
+    -------
+    Report
+        A report where ``issues`` contains preflight findings and ``cleaned``
+        is the unmodified input DataFrame.
+    """
+    tp = resolve_task(task)
+    issues = run_preflight(df, tp)
+    return Report(
+        cleaned=df,
+        issues=issues,
+        changes=[],
+        profile_name=f"preflight:{tp.name}",
+        validation_level="preflight",
     )

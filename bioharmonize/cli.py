@@ -20,8 +20,9 @@ def main(argv: list[str] | None = None) -> None:
 def _build_cli():
     import click
 
-    from .api import clean_obs, validate_obs
+    from .api import clean_obs, preflight as preflight_fn, validate_obs
     from .io import read_obs
+    from .preflight import list_tasks
 
     @click.group()
     def cli():
@@ -95,5 +96,26 @@ def _build_cli():
         out_path = output or path.replace(".h5ad", "_harmonized.h5ad")
         new_ad.write_h5ad(out_path)
         click.echo(f"\nPatched file written to: {out_path}")
+
+    @cli.command()
+    @click.argument("path", type=click.Path(exists=True))
+    @click.argument("task", type=click.Choice(list_tasks()))
+    @click.option("--profile", default="single_cell_human", help="Clean with this profile first")
+    @click.option("--clean/--no-clean", default=True, help="Run clean_obs before preflight checks")
+    def preflight(path: str, task: str, profile: str, clean: bool):
+        """Check if a dataset is ready for a downstream analysis task.
+
+        TASK is one of: clustering, differential_expression, integration,
+        cell_type_annotation.
+        """
+        df = read_obs(path)
+        if clean:
+            clean_report = clean_obs(df, profile=profile)
+            df = clean_report.cleaned
+        report = preflight_fn(df, task)
+        click.echo(report.summary())
+        errors = [i for i in report.issues if i.severity == "error"]
+        if errors:
+            sys.exit(1)
 
     return cli
