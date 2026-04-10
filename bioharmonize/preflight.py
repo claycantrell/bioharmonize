@@ -36,9 +36,14 @@ class TaskProfile:
 # ---------------------------------------------------------------------------
 
 
+def _has_duplicate_col(df: pd.DataFrame, col: str) -> bool:
+    """Return True if *col* appears more than once in df.columns."""
+    return df.columns.duplicated().any() and isinstance(df[col], pd.DataFrame)
+
+
 def _check_condition_has_groups(df: pd.DataFrame) -> list[Issue]:
     """Condition column must have at least 2 unique values for comparison."""
-    if "condition" not in df.columns:
+    if "condition" not in df.columns or _has_duplicate_col(df, "condition"):
         return []
     n_groups = df["condition"].dropna().nunique()
     if n_groups < 2:
@@ -58,10 +63,12 @@ def _check_replicates_per_condition(df: pd.DataFrame) -> list[Issue]:
     """Warn if any condition group has only 1 biological replicate."""
     if "condition" not in df.columns or "sample_id" not in df.columns:
         return []
+    if _has_duplicate_col(df, "condition") or _has_duplicate_col(df, "sample_id"):
+        return []
     groups = df.groupby("condition")["sample_id"].nunique()
     low = groups[groups < 2]
     if len(low) > 0:
-        names = sorted(low.index.tolist())
+        names = sorted(str(v) for v in low.index.tolist())
         return [
             Issue(
                 severity="warning",
@@ -79,7 +86,7 @@ def _check_replicates_per_condition(df: pd.DataFrame) -> list[Issue]:
 
 def _check_batch_has_variation(df: pd.DataFrame) -> list[Issue]:
     """Batch variable must have >= 2 unique values to integrate across."""
-    if "batch_id" not in df.columns:
+    if "batch_id" not in df.columns or _has_duplicate_col(df, "batch_id"):
         return []
     n_batches = df["batch_id"].dropna().nunique()
     if n_batches < 2:
@@ -97,7 +104,7 @@ def _check_batch_has_variation(df: pd.DataFrame) -> list[Issue]:
 
 def _check_cell_type_exists(df: pd.DataFrame) -> list[Issue]:
     """Warn if cell_type column already exists (annotation will overwrite)."""
-    if "cell_type" in df.columns:
+    if "cell_type" in df.columns and not _has_duplicate_col(df, "cell_type"):
         n_unique = df["cell_type"].dropna().nunique()
         return [
             Issue(
@@ -311,7 +318,7 @@ def _check_min_cells(adata: anndata.AnnData, *, min_cells: int = 50) -> list[Iss
 
 def _check_cells_per_condition(adata: anndata.AnnData) -> list[Issue]:
     """Check minimum cell count per condition group for DE."""
-    if "condition" not in adata.obs.columns:
+    if "condition" not in adata.obs.columns or _has_duplicate_col(adata.obs, "condition"):
         return []
     group_counts = adata.obs["condition"].value_counts()
     small_groups = group_counts[group_counts < 3]
@@ -334,7 +341,7 @@ def _check_cells_per_condition(adata: anndata.AnnData) -> list[Issue]:
 
 def _check_cells_per_batch(adata: anndata.AnnData) -> list[Issue]:
     """Check minimum cell count per batch for integration."""
-    if "batch_id" not in adata.obs.columns:
+    if "batch_id" not in adata.obs.columns or _has_duplicate_col(adata.obs, "batch_id"):
         return []
     group_counts = adata.obs["batch_id"].value_counts()
     small_groups = group_counts[group_counts < 10]

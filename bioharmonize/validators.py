@@ -95,6 +95,8 @@ def run_validation(
     for col_name, spec in profile.canonical_columns.items():
         if col_name not in df.columns:
             continue
+        if df.columns.duplicated().any() and isinstance(df[col_name], pd.DataFrame):
+            continue
         series = df[col_name]
         if spec.dtype in ("string", "categorical") and pd.api.types.is_numeric_dtype(series):
             issues.append(
@@ -149,6 +151,8 @@ def run_validation(
     for col_name, normalizer in profile.value_normalizers.items():
         if col_name not in df.columns:
             continue
+        if df.columns.duplicated().any() and isinstance(df[col_name], pd.DataFrame):
+            continue
         series = df[col_name].dropna()
         if series.empty:
             continue
@@ -182,6 +186,8 @@ def run_validation(
     for col_name, spec in profile.canonical_columns.items():
         if col_name not in df.columns:
             continue
+        if df.columns.duplicated().any() and isinstance(df[col_name], pd.DataFrame):
+            continue
         if not spec.nullable:
             n_null = int(df[col_name].isna().sum())
             if n_null > 0:
@@ -205,7 +211,7 @@ def run_validation(
                             code="INVALID_VALUE",
                             column=col_name,
                             message=(
-                                f"Column {col_name!r} has values not in allowed set: {sorted(bad)}"
+                                f"Column {col_name!r} has values not in allowed set: {sorted(str(v) for v in bad)}"
                             ),
                             suggestion=f"Allowed values: {list(spec.allowed_values)}",
                             row_count=int(series.isin(bad).sum()),
@@ -215,6 +221,8 @@ def run_validation(
     # flag unknown values in normalized columns
     for col_name, normalizer in profile.value_normalizers.items():
         if col_name not in df.columns:
+            continue
+        if df.columns.duplicated().any() and isinstance(df[col_name], pd.DataFrame):
             continue
         series = df[col_name].dropna()
         if series.empty:
