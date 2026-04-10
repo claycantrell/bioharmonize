@@ -1,0 +1,6 @@
+,cell_type,sex,donor_id,sample_id,condition,tissue,batch_id,assay,species,disease
+OBS_001,T cell,male,DONOR_A,SAMP_1,control,lung,BATCH_1,10x,Homo sapiens,normal
+OBS_002,B cell,female,DONOR_A,SAMP_1,control,lung,BATCH_1,10x,Homo sapiens,normal
+OBS_003,Macrophage,male,DONOR_B,SAMP_2,disease,liver,BATCH_1,10x,Homo sapiens,NAFLD
+OBS_004,NK cell,female,DONOR_B,SAMP_2,disease,liver,BATCH_2,10x,Homo sapiens,NAFLD
+OBS_005,Monocyte,male,DONOR_C,SAMP_3,control,kidney,BATCH_2,smart-seq2,Homo sapiens,normal

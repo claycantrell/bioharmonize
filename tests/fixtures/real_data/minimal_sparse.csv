@@ -1,0 +1,4 @@
+,cell_type_annotation,sex
+CELL_A,Neuron,m
+CELL_B,Astrocyte,f
+CELL_C,Oligodendrocyte,unknown

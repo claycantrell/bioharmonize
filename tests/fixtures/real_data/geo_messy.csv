@@ -1,0 +1,11 @@
+,celltype,gender,donor,sample,status,organ,batch,assay
+AACG_1,CD4+ T cell,m,D001,S01,ctrl,lung,B1,10x genomics
+AACG_2,CD8+ T cell,f,D002,S01,disease,lung,B1,10x genomics
+AACG_3,B cell,m,D001,S02,healthy,lung,B2,10x genomics
+AACG_4,Macrophage,female,D003,S02,case,kidney,B2,smartseq2
+AACG_5,NK cell,male,D003,S03,ctrl,kidney,B2,smartseq2
+AACG_6,Monocyte,unknown,D004,S03,disease,liver,B3,10x 3'
+AACG_7,Dendritic cell,f,D004,S04,healthy,liver,B3,10x 3'
+AACG_8,CD4+ T cell,m,D005,S04,ctrl,lung,B1,10x genomics
+AACG_9,Plasma cell,f,D005,S05,disease,spleen,B3,smart-seq2
+AACG_10,Epithelial,male,D006,S05,case,kidney,B2,10x 5'
