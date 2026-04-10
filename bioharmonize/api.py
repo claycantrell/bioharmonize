@@ -294,6 +294,10 @@ def _apply_normalizations(
             continue
 
         new_values = series.copy()
+        # If the column is Categorical, convert to object first so we can
+        # assign normalized values that aren't in the existing category set.
+        if isinstance(new_values.dtype, pd.CategoricalDtype):
+            new_values = new_values.astype(object)
         for val in series[mask].unique():
             normalized = normalizer(str(val))
             if normalized is not None and normalized != str(val):
@@ -519,20 +523,37 @@ def validate(
     for col in df.columns:
         normed = _normalize_col_name(col)
         target = alias_lookup.get(normed) or alias_lookup.get(col.lower().strip())
-        if target and target not in df.columns:
-            alias_hits.setdefault(target, []).append(col)
-            issues.append(
-                Issue(
-                    severity="warning",
-                    code="POSSIBLE_ALIAS",
-                    column=col,
-                    message=(
-                        f"Column {col!r} looks like an alias for canonical column {target!r}. "
-                        f"Use repair() to rename automatically."
-                    ),
-                    suggestion=f"Run bh.repair(data) to rename {col!r} → {target!r}.",
+        if target and col != target:
+            if target not in df.columns:
+                # Alias column exists but canonical doesn't — suggest rename
+                alias_hits.setdefault(target, []).append(col)
+                issues.append(
+                    Issue(
+                        severity="warning",
+                        code="POSSIBLE_ALIAS",
+                        column=col,
+                        message=(
+                            f"Column {col!r} looks like an alias for canonical column {target!r}. "
+                            f"Use repair() to rename automatically."
+                        ),
+                        suggestion=f"Run bh.repair(data) to rename {col!r} → {target!r}.",
+                    )
                 )
-            )
+            else:
+                # Both alias and canonical exist — semantic drift / conflict
+                issues.append(
+                    Issue(
+                        severity="warning",
+                        code="ALIAS_AND_CANONICAL_COEXIST",
+                        column=col,
+                        message=(
+                            f"Column {col!r} looks like an alias for {target!r}, "
+                            f"but {target!r} already exists. This may indicate merged "
+                            f"studies with conflicting metadata. Check that values agree."
+                        ),
+                        suggestion=f"Compare df['{col}'] vs df['{target}'] and drop the redundant column.",
+                    )
+                )
 
     # Flag conflicts where multiple columns compete for the same canonical name
     for target, sources in alias_hits.items():
