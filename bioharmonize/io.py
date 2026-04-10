@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 import pandas as pd
 
@@ -35,3 +35,14 @@ def read_h5ad(path: str | Path) -> anndata.AnnData:
             "Install with: pip install bioharmonize[anndata]"
         ) from None
     return _anndata.read_h5ad(Path(path))
+
+
+def read_data(path: str | Path) -> Union[pd.DataFrame, "anndata.AnnData"]:
+    """Read a metadata file or h5ad, returning a DataFrame or AnnData.
+
+    Supports .csv, .tsv, .txt (returning DataFrame) and .h5ad (returning AnnData).
+    """
+    path = Path(path)
+    if path.suffix in {".h5ad", ".h5"}:
+        return read_h5ad(path)
+    return read_obs(path)

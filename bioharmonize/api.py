@@ -621,7 +621,7 @@ def preflight(
 
 
 def clean_obs(
-    df: pd.DataFrame,
+    data: ObsData,
     profile: str | Profile = "single_cell_human",
     *,
     column_map: dict[str, str] | None = None,
@@ -631,7 +631,7 @@ def clean_obs(
 ) -> Report:
     """Clean and validate obs metadata.  Alias for :func:`repair`."""
     return repair(
-        df,
+        data,
         profile=profile,
         column_map=column_map,
         value_maps=value_maps,
@@ -641,10 +641,10 @@ def clean_obs(
 
 
 def validate_obs(
-    df: pd.DataFrame,
+    data: ObsData,
     profile: str | Profile = "single_cell_human",
     *,
     level: str = "standard",
 ) -> Report:
     """Validate obs metadata without modifying it.  Alias for :func:`validate`."""
-    return validate(df, profile=profile, level=level)
+    return validate(data, profile=profile, level=level)

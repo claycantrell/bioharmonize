@@ -23,7 +23,7 @@ def _build_cli():
     from .api import clean_obs, preflight as preflight_fn, validate_obs
     from .api import inspect as _inspect
     from .api import repair as _repair
-    from .io import read_obs
+    from .io import read_data, read_obs
     from .preflight import list_tasks
 
     @click.group()
@@ -38,8 +38,8 @@ def _build_cli():
     @click.option("--profile", default="single_cell_human", help="Validation profile name")
     def inspect(path: str, profile: str):
         """Analyse metadata and show diagnostics without modifying data."""
-        df = read_obs(path)
-        report = _inspect(df, profile=profile)
+        data = read_data(path)
+        report = _inspect(data, profile=profile)
         click.echo(report.summary())
 
     @cli.command("repair")
@@ -54,10 +54,14 @@ def _build_cli():
     @click.option("--output", "-o", default=".", help="Output directory")
     def repair_cmd(path: str, profile: str, validation: str, output: str):
         """Repair metadata: rename columns, normalise values, validate."""
-        df = read_obs(path)
-        report = _repair(df, profile=profile, validation=validation)
+        data = read_data(path)
+        report = _repair(data, profile=profile, validation=validation)
         out_dir = Path(output)
         report.save(out_dir)
+        if report.adata is not None:
+            h5ad_out = out_dir / "repaired.h5ad"
+            report.adata.write_h5ad(h5ad_out)
+            click.echo(f"\nRepaired .h5ad written to: {h5ad_out}")
         click.echo(report.summary())
 
     # ── Backward-compatible commands ────────────────────────────────────
@@ -74,10 +78,14 @@ def _build_cli():
     @click.option("--output", "-o", default=".", help="Output directory")
     def clean(path: str, profile: str, validation: str, output: str):
         """Clean and normalize a metadata table."""
-        df = read_obs(path)
-        report = clean_obs(df, profile=profile, validation=validation)
+        data = read_data(path)
+        report = clean_obs(data, profile=profile, validation=validation)
         out_dir = Path(output)
         report.save(out_dir)
+        if report.adata is not None:
+            h5ad_out = out_dir / "cleaned.h5ad"
+            report.adata.write_h5ad(h5ad_out)
+            click.echo(f"\nCleaned .h5ad written to: {h5ad_out}")
         click.echo(report.summary())
 
     @cli.command()
@@ -91,8 +99,8 @@ def _build_cli():
     )
     def validate(path: str, profile: str, level: str):
         """Validate a metadata table without modifying it."""
-        df = read_obs(path)
-        report = validate_obs(df, profile=profile, level=level)
+        data = read_data(path)
+        report = validate_obs(data, profile=profile, level=level)
         click.echo(report.summary())
         errors = [i for i in report.issues if i.severity == "error"]
         if errors and level == "strict":
@@ -141,11 +149,11 @@ def _build_cli():
         TASK is one of: clustering, differential_expression, integration,
         cell_type_annotation.
         """
-        df = read_obs(path)
+        data = read_data(path)
         if clean:
-            clean_report = clean_obs(df, profile=profile)
-            df = clean_report.cleaned
-        report = preflight_fn(df, task)
+            clean_report = clean_obs(data, profile=profile)
+            data = clean_report.cleaned
+        report = preflight_fn(data, task)
         click.echo(report.summary())
         errors = [i for i in report.issues if i.severity == "error"]
         if errors:
