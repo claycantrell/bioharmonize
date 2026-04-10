@@ -21,6 +21,14 @@ FIXTURES = Path(__file__).parent / "fixtures" / "real_data"
 DATASETS = sorted(FIXTURES.glob("*.csv"))
 VALIDATION_LEVELS = ["minimal", "standard", "strict"]
 
+# The 4 real GEO datasets used for targeted assertions
+GEO_DATASETS = {
+    "lung_cancer": FIXTURES / "geo_lung_cancer_obs.csv",
+    "kidney_myeloid": FIXTURES / "geo_kidney_myeloid_obs.csv",
+    "crc_leukocyte": FIXTURES / "geo_crc_leukocyte_obs.csv",
+    "hsc_facs": FIXTURES / "geo_hsc_facs_obs.csv",
+}
+
 
 @pytest.fixture(params=DATASETS, ids=lambda p: p.stem)
 def dataset(request) -> Path:
@@ -226,3 +234,261 @@ class TestCLIWithRealData:
         # when required columns are missing (uses original column names)
         assert result.exit_code in (0, 1), f"CLI validate crashed at {val_level}: {result.output}"
         assert val_level in result.output
+
+
+# ---------------------------------------------------------------------------
+# 6. Targeted assertions for 4 GEO datasets
+# ---------------------------------------------------------------------------
+
+
+class TestGeoLungCancerRenames:
+    """geo_lung_cancer_obs: clean dataset with near-standard column names."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        df = read_obs(GEO_DATASETS["lung_cancer"])
+        self.report = bh.clean_obs(df, profile="single_cell_human")
+        self.cleaned = self.report.cleaned
+
+    def test_cell_type_renamed(self):
+        assert "cell_type" in self.cleaned.columns
+        assert "Cell_type" not in self.cleaned.columns
+
+    def test_sample_renamed_to_sample_id(self):
+        assert "sample_id" in self.cleaned.columns
+        assert "Sample" not in self.cleaned.columns
+
+    def test_sample_origin_not_renamed(self):
+        """Sample_Origin has no alias — it should pass through unchanged."""
+        assert "Sample_Origin" in self.cleaned.columns
+
+    def test_cell_subtype_not_renamed(self):
+        assert "Cell_subtype" in self.cleaned.columns
+
+    def test_barcode_not_renamed(self):
+        assert "Barcode" in self.cleaned.columns
+
+    def test_cell_type_values_preserved(self):
+        """Cell type values are full readable names, not codes."""
+        vals = set(self.cleaned["cell_type"].unique())
+        assert "B lymphocytes" in vals
+        assert "Myeloid cells" in vals
+
+    def test_no_normalizations_applied(self):
+        """No normalizable columns (sex/condition/assay) exist, so zero normalizations."""
+        norm_changes = [c for c in self.report.changes if c.kind == "normalize_value"]
+        assert len(norm_changes) == 0
+
+
+class TestGeoKidneyMyeloidRenames:
+    """geo_kidney_myeloid_obs: moderately messy with non-standard column names."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        df = read_obs(GEO_DATASETS["kidney_myeloid"])
+        self.report = bh.clean_obs(df, profile="single_cell_human")
+        self.cleaned = self.report.cleaned
+
+    def test_patient_renamed_to_donor_id(self):
+        assert "donor_id" in self.cleaned.columns
+        assert "patient" not in self.cleaned.columns
+
+    def test_batch_renamed_to_batch_id(self):
+        assert "batch_id" in self.cleaned.columns
+        assert "batch" not in self.cleaned.columns
+
+    def test_tissue_already_canonical(self):
+        """tissue is already the canonical name — should stay, not be renamed."""
+        assert "tissue" in self.cleaned.columns
+        rename_targets = {c.before for c in self.report.changes if c.kind == "rename_column"}
+        assert "tissue" not in rename_targets
+
+    def test_cancer_not_renamed(self):
+        """'cancer' has no alias to 'disease' — should pass through."""
+        assert "cancer" in self.cleaned.columns
+
+    def test_tech_not_renamed(self):
+        """'tech' has no alias to 'assay' — should pass through."""
+        assert "tech" in self.cleaned.columns
+
+    def test_major_cluster_not_renamed(self):
+        """MajorCluster has no alias to cell_type — should pass through."""
+        assert "MajorCluster" in self.cleaned.columns
+
+    def test_tissue_values_are_abbreviations(self):
+        """Tissue values are single-letter abbreviations, passed through as-is."""
+        vals = set(self.cleaned["tissue"].unique())
+        assert vals <= {"N", "T"}
+
+    def test_donor_id_values(self):
+        vals = set(self.cleaned["donor_id"].unique())
+        assert "P20181217" in vals
+
+
+class TestGeoCrcLeukocyteRenames:
+    """geo_crc_leukocyte_obs: messy dataset with 23 columns, mostly QC metrics."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        df = read_obs(GEO_DATASETS["crc_leukocyte"])
+        self.report = bh.clean_obs(df, profile="single_cell_human")
+        self.cleaned = self.report.cleaned
+
+    def test_sample_renamed_to_sample_id(self):
+        assert "sample_id" in self.cleaned.columns
+        assert "Sample" not in self.cleaned.columns
+
+    def test_tissue_renamed_case_only(self):
+        """Tissue → tissue (case normalization to canonical name)."""
+        assert "tissue" in self.cleaned.columns
+        assert "Tissue" not in self.cleaned.columns
+
+    def test_platform_renamed_case_only(self):
+        """Platform → platform (case normalization to canonical name)."""
+        assert "platform" in self.cleaned.columns
+        assert "Platform" not in self.cleaned.columns
+
+    def test_global_cluster_not_renamed(self):
+        """Global_Cluster has no alias to cell_type — stays as-is."""
+        assert "Global_Cluster" in self.cleaned.columns
+        assert "cell_type" not in self.cleaned.columns
+
+    def test_sub_cluster_not_renamed(self):
+        assert "Sub_Cluster" in self.cleaned.columns
+
+    def test_qc_columns_survive(self):
+        """QC metric columns should pass through untouched."""
+        for col in ["raw.nUMI", "raw.nGene", "filter.nUMI", "filter.nGene"]:
+            assert col in self.cleaned.columns
+
+    def test_tissue_values_single_letter(self):
+        vals = set(self.cleaned["tissue"].unique())
+        assert vals == {"N", "P", "T"}
+
+    def test_no_normalizations_applied(self):
+        norm_changes = [c for c in self.report.changes if c.kind == "normalize_value"]
+        assert len(norm_changes) == 0
+
+
+class TestGeoHscFacsRenames:
+    """geo_hsc_facs_obs: very messy FACS data with no cell_type column at all."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        df = read_obs(GEO_DATASETS["hsc_facs"])
+        self.report = bh.clean_obs(df, profile="single_cell_human")
+        self.cleaned = self.report.cleaned
+
+    def test_donor_renamed_to_donor_id(self):
+        assert "donor_id" in self.cleaned.columns
+        assert "Donor" not in self.cleaned.columns
+
+    def test_tissue_renamed_case_only(self):
+        assert "tissue" in self.cleaned.columns
+        assert "Tissue" not in self.cleaned.columns
+
+    def test_no_cell_type_column(self):
+        """No column maps to cell_type — it should remain absent."""
+        assert "cell_type" not in self.cleaned.columns
+
+    def test_facs_markers_survive(self):
+        """FACS intensity columns should pass through untouched."""
+        for marker in ["CD34", "CD38", "CD45RA", "CD49f", "CD90"]:
+            assert marker in self.cleaned.columns
+
+    def test_cycling_not_renamed(self):
+        assert "Cycling" in self.cleaned.columns
+
+    def test_tissue_values_full_text(self):
+        """Unlike other GEO datasets, tissue values are full text here."""
+        vals = set(self.cleaned["tissue"].unique())
+        assert "Bone Marrow" in vals
+        assert "Mobilized Peripheral Blood" in vals
+
+    def test_donor_id_values(self):
+        vals = set(self.cleaned["donor_id"].unique())
+        assert "BM1" in vals
+        assert "mPB-3" in vals
+
+    def test_no_normalizations_applied(self):
+        norm_changes = [c for c in self.report.changes if c.kind == "normalize_value"]
+        assert len(norm_changes) == 0
+
+
+# ---------------------------------------------------------------------------
+# 7. Strict validation errors for GEO datasets
+# ---------------------------------------------------------------------------
+
+
+class TestStrictValidationErrors:
+    """Verify that strict validation flags the right missing required columns."""
+
+    def _error_codes(self, stem):
+        df = read_obs(GEO_DATASETS[stem])
+        report = bh.clean_obs(df, profile="single_cell_human", validation="strict")
+        return {
+            (i.code, i.column)
+            for i in report.issues
+            if i.severity == "error"
+        }
+
+    def test_lung_cancer_strict_errors(self):
+        """Lung cancer has cell_type and sample_id but lacks donor_id, condition, sex."""
+        errors = self._error_codes("lung_cancer")
+        # Should NOT have errors for cell_type or sample_id (they exist after rename)
+        assert ("MISSING_REQUIRED_COLUMN", "cell_type") not in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sample_id") not in errors
+        # Should have errors for these missing columns
+        assert ("MISSING_REQUIRED_COLUMN", "donor_id") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "condition") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sex") in errors
+
+    def test_kidney_myeloid_strict_errors(self):
+        """Kidney has donor_id (from patient) but lacks cell_type, sample_id, condition, sex."""
+        errors = self._error_codes("kidney_myeloid")
+        assert ("MISSING_REQUIRED_COLUMN", "donor_id") not in errors
+        assert ("MISSING_REQUIRED_COLUMN", "cell_type") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sample_id") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "condition") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sex") in errors
+
+    def test_crc_leukocyte_strict_errors(self):
+        """CRC has sample_id (from Sample) but lacks cell_type, donor_id, condition, sex."""
+        errors = self._error_codes("crc_leukocyte")
+        assert ("MISSING_REQUIRED_COLUMN", "sample_id") not in errors
+        assert ("MISSING_REQUIRED_COLUMN", "cell_type") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "donor_id") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "condition") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sex") in errors
+
+    def test_hsc_facs_strict_errors(self):
+        """HSC FACS has donor_id (from Donor) but lacks cell_type, sample_id, condition, sex."""
+        errors = self._error_codes("hsc_facs")
+        assert ("MISSING_REQUIRED_COLUMN", "donor_id") not in errors
+        assert ("MISSING_REQUIRED_COLUMN", "cell_type") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sample_id") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "condition") in errors
+        assert ("MISSING_REQUIRED_COLUMN", "sex") in errors
+
+    def test_standard_fewer_errors_than_strict(self):
+        """Standard level requires only cell_type and sample_id, so fewer errors."""
+        for stem in GEO_DATASETS:
+            df = read_obs(GEO_DATASETS[stem])
+            std = bh.clean_obs(df, profile="single_cell_human", validation="standard")
+            strict = bh.clean_obs(df, profile="single_cell_human", validation="strict")
+            std_errors = [i for i in std.issues if i.severity == "error"]
+            strict_errors = [i for i in strict.issues if i.severity == "error"]
+            assert len(std_errors) <= len(strict_errors), (
+                f"{stem}: standard ({len(std_errors)}) should have <= errors than strict ({len(strict_errors)})"
+            )
+
+    def test_minimal_no_missing_column_errors(self):
+        """Minimal validation does not check for required columns."""
+        for stem in GEO_DATASETS:
+            df = read_obs(GEO_DATASETS[stem])
+            report = bh.clean_obs(df, profile="single_cell_human", validation="minimal")
+            missing_errors = [
+                i for i in report.issues
+                if i.severity == "error" and i.code == "MISSING_REQUIRED_COLUMN"
+            ]
+            assert len(missing_errors) == 0, f"{stem}: minimal should have no missing-column errors"

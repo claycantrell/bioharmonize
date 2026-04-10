@@ -7,7 +7,10 @@ build/
 .pytest_cache/
 *.egg
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
+# Gas Town (added by gt)
+.runtime/
+.claude/
+.logs/
+state.json
+CLAUDE.md
+CLAUDE.local.md
