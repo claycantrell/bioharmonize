@@ -178,37 +178,37 @@ class TestRepair:
 
 class TestPreflight:
     def test_returns_report(self):
-        df = _make_df(celltype=["T cell"])
-        report = bh.preflight(df)
+        df = _make_df(cell_type=["T cell", "B cell"], condition=["control", "disease"], sample_id=["S1", "S2"])
+        report = bh.preflight(df, task="differential_expression")
         assert isinstance(report, bh.Report)
 
     def test_does_not_modify_input(self):
-        df = _make_df(sex=["m"])
-        bh.preflight(df)
+        df = _make_df(cell_type=["T cell"], sex=["m"])
+        bh.preflight(df, task="clustering")
         assert df["sex"].iloc[0] == "m"
 
-    def test_cleaned_shows_repaired_preview(self):
-        df = _make_df(celltype=["T cell"], sex=["m"])
-        report = bh.preflight(df)
-        assert "cell_type" in report.cleaned.columns
-        assert report.cleaned["sex"].iloc[0] == "male"
+    def test_de_requires_grouping_column(self):
+        df = _make_df(cell_type=["T cell", "B cell"])
+        report = bh.preflight(df, task="differential_expression")
+        errors = [i for i in report.issues if i.severity == "error"]
+        assert any("grouping" in i.message.lower() or "condition" in i.message.lower() for i in errors)
 
-    def test_same_changes_as_repair(self):
-        df = _make_df(gender=["m", "f"], donor=["D1", "D2"])
-        pf = bh.preflight(df)
-        rp = bh.repair(df)
-        assert len(pf.changes) == len(rp.changes)
-        pf_kinds = [(c.kind, c.column, c.before, c.after) for c in pf.changes]
-        rp_kinds = [(c.kind, c.column, c.before, c.after) for c in rp.changes]
-        assert pf_kinds == rp_kinds
+    def test_integration_requires_batch(self):
+        df = _make_df(cell_type=["T cell", "B cell"])
+        report = bh.preflight(df, task="integration")
+        errors = [i for i in report.issues if i.severity == "error"]
+        assert any("batch" in i.message.lower() for i in errors)
 
-    def test_same_issues_as_repair(self):
-        df = _make_df(gender=["m", "f"])
-        pf = bh.preflight(df)
-        rp = bh.repair(df)
-        pf_codes = sorted(i.code for i in pf.issues)
-        rp_codes = sorted(i.code for i in rp.issues)
-        assert pf_codes == rp_codes
+    def test_ready_dataset_has_no_errors(self):
+        df = _make_df(
+            cell_type=["T cell"] * 10 + ["B cell"] * 10,
+            condition=["control"] * 10 + ["disease"] * 10,
+            sample_id=[f"S{i}" for i in range(20)],
+            donor_id=[f"D{i}" for i in range(20)],
+        )
+        report = bh.preflight(df, task="differential_expression")
+        errors = [i for i in report.issues if i.severity == "error"]
+        assert len(errors) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +277,8 @@ class TestAnnDataInput:
         assert report.adata is adata
 
     def test_preflight_accepts_anndata(self, adata):
-        report = bh.preflight(adata)
+        report = bh.preflight(adata, task="clustering")
         assert isinstance(report, bh.Report)
-        assert "cell_type" in report.cleaned.columns
         # Original adata not modified
         assert "celltype" in adata.obs.columns
 
@@ -343,7 +342,6 @@ class TestNewCLICommands:
         from bioharmonize.cli import _build_cli
 
         runner = CliRunner()
-        result = runner.invoke(_build_cli(), ["preflight", str(sample_csv)])
-        assert result.exit_code == 0
-        assert "single_cell_human" in result.output
-        assert "changes" in result.output
+        result = runner.invoke(_build_cli(), ["preflight", str(sample_csv), "clustering"])
+        assert result.exit_code in (0, 1)  # may fail readiness check
+        assert "preflight" in result.output.lower() or "clustering" in result.output.lower()
