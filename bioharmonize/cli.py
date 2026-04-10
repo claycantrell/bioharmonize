@@ -20,13 +20,65 @@ def main(argv: list[str] | None = None) -> None:
 def _build_cli():
     import click
 
-    from .api import clean_obs, validate_obs
+    from .api import inspect as _inspect
+    from .api import preflight as _preflight
+    from .api import repair as _repair
+    from .api import validate as _validate
     from .io import read_obs
+
+    # keep backward-compat imports for old commands
+    from .api import clean_obs, validate_obs
 
     @click.group()
     def cli():
         """bioharmonize - Normalize and validate biological study metadata."""
         pass
+
+    # ── New top-level commands ───────────────────────────────────────────
+
+    @cli.command()
+    @click.argument("path", type=click.Path(exists=True))
+    @click.option("--profile", default="single_cell_human", help="Validation profile name")
+    def inspect(path: str, profile: str):
+        """Analyse metadata and show diagnostics without modifying data."""
+        df = read_obs(path)
+        report = _inspect(df, profile=profile)
+        click.echo(report.summary())
+
+    @cli.command("repair")
+    @click.argument("path", type=click.Path(exists=True))
+    @click.option("--profile", default="single_cell_human", help="Validation profile name")
+    @click.option(
+        "--validation",
+        default="standard",
+        type=click.Choice(["minimal", "standard", "strict"]),
+        help="Validation level",
+    )
+    @click.option("--output", "-o", default=".", help="Output directory")
+    def repair_cmd(path: str, profile: str, validation: str, output: str):
+        """Repair metadata: rename columns, normalise values, validate."""
+        df = read_obs(path)
+        report = _repair(df, profile=profile, validation=validation)
+        out_dir = Path(output)
+        report.save(out_dir)
+        click.echo(report.summary())
+
+    @cli.command("preflight")
+    @click.argument("path", type=click.Path(exists=True))
+    @click.option("--profile", default="single_cell_human", help="Validation profile name")
+    @click.option(
+        "--validation",
+        default="standard",
+        type=click.Choice(["minimal", "standard", "strict"]),
+        help="Validation level",
+    )
+    def preflight_cmd(path: str, profile: str, validation: str):
+        """Dry-run of repair: show what would change without saving."""
+        df = read_obs(path)
+        report = _preflight(df, profile=profile, validation=validation)
+        click.echo(report.summary())
+
+    # ── Backward-compatible commands ────────────────────────────────────
 
     @cli.command()
     @click.argument("path", type=click.Path(exists=True))
