@@ -3,7 +3,7 @@
 from .anndata import patch_anndata
 from .api import clean_obs, inspect, preflight, repair, validate, validate_obs
 from .changes import Change
-from .io import read_obs
+from .io import read_h5ad, read_obs
 from .issues import Issue
 from .preflight import TaskProfile, list_tasks, resolve_task
 from .profiles import Profile, resolve_profile as profile
@@ -26,6 +26,7 @@ __all__ = [
     "patch_anndata",
     # Utilities
     "read_obs",
+    "read_h5ad",
     "profile",
     # Types
     "Profile",

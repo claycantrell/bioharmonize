@@ -359,6 +359,77 @@ def _apply_dtype_coercions(
     return df, changes
 
 
+def _repair_index(df: pd.DataFrame) -> tuple[pd.DataFrame, list[Change]]:
+    """Fix structural index issues: whitespace, integer index, duplicates."""
+    changes: list[Change] = []
+
+    # Step 1: Strip leading/trailing whitespace from index values
+    str_idx = df.index.astype(str)
+    stripped = str_idx.str.strip()
+    n_ws = int((str_idx != stripped).sum())
+    if n_ws > 0:
+        df.index = pd.Index(stripped, name=df.index.name)
+        changes.append(
+            Change(
+                kind="strip_index",
+                column="(index)",
+                before="whitespace in cell IDs",
+                after="stripped",
+                count=n_ws,
+            )
+        )
+
+    # Step 2: Replace default integer / unnamed index with generated cell IDs
+    # Check for actual integer dtype OR string representations of sequential integers
+    # (AnnData converts integer indices to strings like '0', '1', '2')
+    _is_integer_index = pd.api.types.is_integer_dtype(df.index)
+    if not _is_integer_index and len(df) > 0:
+        try:
+            as_ints = [int(v) for v in df.index]
+            _is_integer_index = as_ints == list(range(len(df)))
+        except (ValueError, TypeError):
+            pass
+    if _is_integer_index:
+        n = len(df)
+        new_index = pd.Index([f"cell_{i}" for i in range(n)])
+        df.index = new_index
+        changes.append(
+            Change(
+                kind="generate_index",
+                column="(index)",
+                before="integer index",
+                after="cell_0..cell_{0}".format(n - 1) if n > 0 else "cell_0",
+                count=n,
+            )
+        )
+
+    # Step 3: Deduplicate cell IDs by appending -1, -2, ... suffixes
+    if df.index.duplicated().any():
+        n_dupes = int(df.index.duplicated().sum())
+        seen: dict[str, int] = {}
+        new_ids: list[str] = []
+        for val in df.index:
+            s = str(val)
+            if s in seen:
+                seen[s] += 1
+                new_ids.append(f"{s}-{seen[s]}")
+            else:
+                seen[s] = 0
+                new_ids.append(s)
+        df.index = pd.Index(new_ids, name=df.index.name)
+        changes.append(
+            Change(
+                kind="deduplicate_index",
+                column="(index)",
+                before=f"{n_dupes} duplicate cell ID(s)",
+                after="unique suffixes appended",
+                count=n_dupes,
+            )
+        )
+
+    return df, changes
+
+
 def _wrap_adata(
     cleaned_obs: pd.DataFrame,
     source_adata: Any,
@@ -474,6 +545,10 @@ def repair(
     result = obs.copy() if copy else obs
     changes: list[Change] = []
     issues: list[Issue] = []
+
+    # step 0: structural index repairs (whitespace, integer index, duplicates)
+    result, index_changes = _repair_index(result)
+    changes.extend(index_changes)
 
     # step 1: column renames
     rename_map, conflict_issues = _build_rename_map(result, prof, column_map)

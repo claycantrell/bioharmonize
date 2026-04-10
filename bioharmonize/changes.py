@@ -7,7 +7,14 @@ from typing import Any, Literal
 @dataclass(frozen=True)
 class Change:
     kind: Literal[
-        "rename_column", "normalize_value", "coerce_dtype", "drop_column", "fill_missing"
+        "rename_column",
+        "normalize_value",
+        "coerce_dtype",
+        "drop_column",
+        "fill_missing",
+        "deduplicate_index",
+        "strip_index",
+        "generate_index",
     ]
     column: str
     before: Any
