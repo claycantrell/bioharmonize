@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from .changes import Change
 from .issues import Issue
+
+if TYPE_CHECKING:
+    import anndata
 
 
 @dataclass
@@ -17,6 +21,7 @@ class Report:
     changes: list[Change] = field(default_factory=list)
     profile_name: str = ""
     validation_level: str = "standard"
+    adata: anndata.AnnData | None = field(default=None, repr=False)
 
     def summary(self) -> str:
         errors = [i for i in self.issues if i.severity == "error"]

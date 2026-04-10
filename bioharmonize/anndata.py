@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .api import clean_obs
+from .api import repair
 from .profiles import Profile
 from .report import Report
 
@@ -25,7 +25,7 @@ def patch_anndata(
             "Install it with: pip install bioharmonize[anndata]"
         ) from None
 
-    report = clean_obs(ad.obs, profile=profile, copy=True, **clean_kwargs)
+    report = repair(ad.obs, profile=profile, copy=True, **clean_kwargs)
 
     if inplace:
         ad.obs = report.cleaned
