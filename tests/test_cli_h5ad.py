@@ -37,6 +37,7 @@ def sample_h5ad(tmp_path):
         obs=obs,
     )
     path = tmp_path / "study.h5ad"
+    anndata.settings.allow_write_nullable_strings = True
     ad.write_h5ad(path)
     return path
 
