@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -14,10 +15,33 @@ from bioharmonize.preflight import (
     DIFFERENTIAL_EXPRESSION,
     INTEGRATION,
     TaskProfile,
+    _check_cells_per_batch,
+    _check_cells_per_condition,
+    _check_counts_layer_exists,
+    _check_min_cells,
+    _check_x_exists,
+    _check_x_is_normalized,
+    _check_x_is_raw_counts,
+    _check_x_sparsity,
+    _x_is_likely_raw_counts,
     list_tasks,
     resolve_task,
     run_preflight,
 )
+
+try:
+    import anndata
+
+    HAS_ANNDATA = True
+except ImportError:
+    HAS_ANNDATA = False
+
+try:
+    from scipy import sparse
+
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
 
 try:
     from click.testing import CliRunner
@@ -323,6 +347,325 @@ class TestPreflightOnRealData:
             if i.code == "PREFLIGHT_MISSING_REQUIRED" and i.column == "batch_id"
         ]
         assert len(missing_required) == 0
+
+
+# ---------------------------------------------------------------------------
+# AnnData-aware preflight checks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestRawCountsHeuristic:
+    def test_integer_matrix_is_raw(self):
+        X = np.array([[1, 0, 5], [0, 3, 2]])
+        assert _x_is_likely_raw_counts(X) is True
+
+    def test_float_matrix_is_not_raw(self):
+        X = np.array([[1.5, 0.0, 2.3], [0.1, 3.7, 0.0]])
+        assert _x_is_likely_raw_counts(X) is False
+
+    def test_negative_values_not_raw(self):
+        X = np.array([[-1, 0, 5], [0, 3, 2]])
+        assert _x_is_likely_raw_counts(X) is False
+
+    def test_empty_matrix_is_raw(self):
+        X = np.array([]).reshape(0, 0)
+        assert _x_is_likely_raw_counts(X) is True
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_sparse_integer_is_raw(self):
+        X = sparse.csr_matrix(np.array([[1, 0, 5], [0, 3, 0]]))
+        assert _x_is_likely_raw_counts(X) is True
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_sparse_float_is_not_raw(self):
+        X = sparse.csr_matrix(np.array([[1.5, 0, 2.3], [0.1, 0, 0]]))
+        assert _x_is_likely_raw_counts(X) is False
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckXExists:
+    def test_x_none(self):
+        adata = anndata.AnnData(obs=pd.DataFrame(index=["c1"]))
+        adata.X = None
+        issues = _check_x_exists(adata)
+        assert any(i.code == "MISSING_X_MATRIX" for i in issues)
+
+    def test_x_empty(self):
+        adata = anndata.AnnData(X=np.array([]).reshape(0, 5))
+        issues = _check_x_exists(adata)
+        assert any(i.code == "EMPTY_X_MATRIX" for i in issues)
+
+    def test_x_present(self):
+        adata = anndata.AnnData(X=np.array([[1, 2], [3, 4]]))
+        issues = _check_x_exists(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckXNormalized:
+    def test_raw_counts_warns(self):
+        adata = anndata.AnnData(X=np.array([[1, 0, 5], [0, 3, 2]]))
+        issues = _check_x_is_normalized(adata)
+        assert any(i.code == "X_APPEARS_RAW" for i in issues)
+
+    def test_normalized_no_warning(self):
+        adata = anndata.AnnData(X=np.array([[1.5, 0.1], [0.3, 2.7]]))
+        issues = _check_x_is_normalized(adata)
+        assert len(issues) == 0
+
+    def test_x_none_no_issue(self):
+        adata = anndata.AnnData(obs=pd.DataFrame(index=["c1"]))
+        adata.X = None
+        issues = _check_x_is_normalized(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckXRawCounts:
+    def test_normalized_warns_no_counts_layer(self):
+        adata = anndata.AnnData(X=np.array([[1.5, 0.1], [0.3, 2.7]]))
+        issues = _check_x_is_raw_counts(adata)
+        assert any(i.code == "X_NOT_RAW_COUNTS" for i in issues)
+
+    def test_normalized_with_counts_layer_info(self):
+        adata = anndata.AnnData(X=np.array([[1.5, 0.1], [0.3, 2.7]]))
+        adata.layers["counts"] = np.array([[2, 0], [1, 5]])
+        issues = _check_x_is_raw_counts(adata)
+        assert any(i.code == "X_NOT_COUNTS_BUT_LAYER_EXISTS" for i in issues)
+        assert all(i.severity == "info" for i in issues)
+
+    def test_raw_counts_no_warning(self):
+        adata = anndata.AnnData(X=np.array([[1, 0, 5], [0, 3, 2]]))
+        issues = _check_x_is_raw_counts(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckCountsLayerExists:
+    def test_no_counts_layer_and_normalized_x(self):
+        adata = anndata.AnnData(X=np.array([[1.5, 0.1], [0.3, 2.7]]))
+        issues = _check_counts_layer_exists(adata)
+        assert any(i.code == "NO_COUNTS_LAYER" for i in issues)
+
+    def test_counts_layer_present(self):
+        adata = anndata.AnnData(X=np.array([[1.5, 0.1], [0.3, 2.7]]))
+        adata.layers["counts"] = np.array([[2, 0], [1, 5]])
+        issues = _check_counts_layer_exists(adata)
+        assert len(issues) == 0
+
+    def test_x_is_raw_counts(self):
+        adata = anndata.AnnData(X=np.array([[1, 0], [0, 5]]))
+        issues = _check_counts_layer_exists(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckXSparsity:
+    def test_dense_matrix_reports_sparsity(self):
+        adata = anndata.AnnData(X=np.array([[1, 0, 0], [0, 0, 2]]))
+        issues = _check_x_sparsity(adata)
+        assert len(issues) == 1
+        assert issues[0].code == "X_SPARSITY"
+        assert "dense" in issues[0].message
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_sparse_matrix_reports_sparsity(self):
+        X = sparse.csr_matrix(np.array([[1, 0, 0], [0, 0, 2]]))
+        adata = anndata.AnnData(X=X)
+        issues = _check_x_sparsity(adata)
+        assert len(issues) == 1
+        assert issues[0].code == "X_SPARSITY"
+        assert "sparse" in issues[0].message
+
+    def test_x_none_no_issue(self):
+        adata = anndata.AnnData(obs=pd.DataFrame(index=["c1"]))
+        adata.X = None
+        issues = _check_x_sparsity(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckMinCells:
+    def test_few_cells_warns(self):
+        adata = anndata.AnnData(X=np.ones((10, 5)))
+        issues = _check_min_cells(adata)
+        assert any(i.code == "LOW_CELL_COUNT" for i in issues)
+
+    def test_enough_cells_no_warning(self):
+        adata = anndata.AnnData(X=np.ones((100, 5)))
+        issues = _check_min_cells(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckCellsPerCondition:
+    def test_low_cells_per_condition(self):
+        obs = pd.DataFrame(
+            {"condition": ["ctrl", "ctrl", "disease"]},
+            index=["c1", "c2", "c3"],
+        )
+        adata = anndata.AnnData(X=np.ones((3, 5)), obs=obs)
+        issues = _check_cells_per_condition(adata)
+        assert any(i.code == "LOW_CELLS_PER_CONDITION" for i in issues)
+
+    def test_adequate_cells_per_condition(self):
+        obs = pd.DataFrame(
+            {"condition": ["ctrl"] * 5 + ["disease"] * 5},
+            index=[f"c{i}" for i in range(10)],
+        )
+        adata = anndata.AnnData(X=np.ones((10, 5)), obs=obs)
+        issues = _check_cells_per_condition(adata)
+        assert len(issues) == 0
+
+    def test_no_condition_column(self):
+        adata = anndata.AnnData(X=np.ones((5, 5)))
+        issues = _check_cells_per_condition(adata)
+        assert len(issues) == 0
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestCheckCellsPerBatch:
+    def test_low_cells_per_batch(self):
+        obs = pd.DataFrame(
+            {"batch_id": ["b1"] * 3 + ["b2"] * 3},
+            index=[f"c{i}" for i in range(6)],
+        )
+        adata = anndata.AnnData(X=np.ones((6, 5)), obs=obs)
+        issues = _check_cells_per_batch(adata)
+        assert any(i.code == "LOW_CELLS_PER_BATCH" for i in issues)
+
+    def test_adequate_cells_per_batch(self):
+        obs = pd.DataFrame(
+            {"batch_id": ["b1"] * 20 + ["b2"] * 20},
+            index=[f"c{i}" for i in range(40)],
+        )
+        adata = anndata.AnnData(X=np.ones((40, 5)), obs=obs)
+        issues = _check_cells_per_batch(adata)
+        assert len(issues) == 0
+
+    def test_no_batch_column(self):
+        adata = anndata.AnnData(X=np.ones((5, 5)))
+        issues = _check_cells_per_batch(adata)
+        assert len(issues) == 0
+
+
+# ---------------------------------------------------------------------------
+# AnnData-aware preflight via public API (bh.preflight)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestPreflightWithAnnData:
+    def test_clustering_with_raw_counts_warns(self):
+        """Clustering on raw counts should warn about normalization."""
+        obs = pd.DataFrame(
+            {"batch_id": ["b1"] * 50 + ["b2"] * 50},
+            index=[f"c{i}" for i in range(100)],
+        )
+        adata = anndata.AnnData(X=np.random.randint(0, 100, (100, 50)), obs=obs)
+        report = bh.preflight(adata, "clustering")
+        codes = [i.code for i in report.issues]
+        assert "X_APPEARS_RAW" in codes
+
+    def test_clustering_with_normalized_data_no_raw_warn(self):
+        """Clustering on normalized data should not warn about raw counts."""
+        obs = pd.DataFrame(
+            {"batch_id": ["b1"] * 50 + ["b2"] * 50},
+            index=[f"c{i}" for i in range(100)],
+        )
+        adata = anndata.AnnData(X=np.random.randn(100, 50).astype(np.float32), obs=obs)
+        report = bh.preflight(adata, "clustering")
+        codes = [i.code for i in report.issues]
+        assert "X_APPEARS_RAW" not in codes
+
+    def test_de_with_normalized_x_warns(self):
+        """DE on normalized X without counts layer should warn."""
+        obs = pd.DataFrame(
+            {
+                "condition": ["ctrl"] * 5 + ["disease"] * 5,
+                "sample_id": [f"s{i}" for i in range(10)],
+                "donor_id": [f"d{i}" for i in range(10)],
+            },
+            index=[f"c{i}" for i in range(10)],
+        )
+        adata = anndata.AnnData(X=np.random.randn(10, 20).astype(np.float32), obs=obs)
+        report = bh.preflight(adata, "differential_expression")
+        codes = [i.code for i in report.issues]
+        assert "X_NOT_RAW_COUNTS" in codes
+
+    def test_de_with_raw_counts_no_warn(self):
+        """DE on raw counts should not warn about normalization."""
+        obs = pd.DataFrame(
+            {
+                "condition": ["ctrl"] * 5 + ["disease"] * 5,
+                "sample_id": [f"s{i}" for i in range(10)],
+                "donor_id": [f"d{i}" for i in range(10)],
+            },
+            index=[f"c{i}" for i in range(10)],
+        )
+        adata = anndata.AnnData(X=np.random.randint(0, 100, (10, 20)), obs=obs)
+        report = bh.preflight(adata, "differential_expression")
+        codes = [i.code for i in report.issues]
+        assert "X_NOT_RAW_COUNTS" not in codes
+
+    def test_integration_with_small_batches_warns(self):
+        """Integration with very few cells per batch should warn."""
+        obs = pd.DataFrame(
+            {"batch_id": ["b1"] * 3 + ["b2"] * 3, "sample_id": ["s1"] * 3 + ["s2"] * 3},
+            index=[f"c{i}" for i in range(6)],
+        )
+        adata = anndata.AnnData(X=np.ones((6, 5)), obs=obs)
+        report = bh.preflight(adata, "integration")
+        codes = [i.code for i in report.issues]
+        assert "LOW_CELLS_PER_BATCH" in codes
+
+    def test_dataframe_skips_adata_checks(self):
+        """When passing a DataFrame (not AnnData), adata_checks are skipped."""
+        df = pd.DataFrame({
+            "batch_id": ["b1", "b1", "b2", "b2"],
+            "sample_id": ["s1", "s1", "s2", "s2"],
+        })
+        report = bh.preflight(df, "clustering")
+        codes = [i.code for i in report.issues]
+        # No adata-level codes should appear
+        assert "MISSING_X_MATRIX" not in codes
+        assert "X_APPEARS_RAW" not in codes
+        assert "X_SPARSITY" not in codes
+
+    def test_missing_x_matrix_errors(self):
+        """AnnData with no X matrix should error."""
+        adata = anndata.AnnData(obs=pd.DataFrame({"batch_id": ["b1", "b2"]}, index=["c1", "c2"]))
+        adata.X = None
+        report = bh.preflight(adata, "clustering")
+        codes = [i.code for i in report.issues]
+        assert "MISSING_X_MATRIX" in codes
+
+    def test_sparsity_reported(self):
+        """Sparsity info should be reported for AnnData."""
+        obs = pd.DataFrame(
+            {"batch_id": ["b1"] * 50 + ["b2"] * 50},
+            index=[f"c{i}" for i in range(100)],
+        )
+        adata = anndata.AnnData(X=np.random.randn(100, 50).astype(np.float32), obs=obs)
+        report = bh.preflight(adata, "clustering")
+        codes = [i.code for i in report.issues]
+        assert "X_SPARSITY" in codes
+
+    def test_custom_profile_no_adata_checks(self):
+        """Custom TaskProfile without adata_checks should work fine with AnnData."""
+        custom = TaskProfile(
+            name="custom",
+            description="A custom task",
+            required_columns=(),
+            recommended_columns=(),
+        )
+        adata = anndata.AnnData(X=np.ones((5, 3)))
+        report = bh.preflight(adata, custom)
+        # No adata-level issues since no adata_checks defined
+        adata_codes = {"MISSING_X_MATRIX", "X_APPEARS_RAW", "X_SPARSITY", "LOW_CELL_COUNT"}
+        for issue in report.issues:
+            assert issue.code not in adata_codes
 
 
 # ---------------------------------------------------------------------------

@@ -531,7 +531,7 @@ def preflight(
     """
     obs, source_adata = _extract_obs(data)
     tp = resolve_task(task)
-    issues = run_preflight(obs, tp)
+    issues = run_preflight(obs, tp, adata=source_adata)
     return Report(
         cleaned=obs,
         issues=issues,

@@ -8,11 +8,15 @@ differential expression, integration, cell type annotation).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable
 
+import numpy as np
 import pandas as pd
 
 from .issues import Issue
+
+if TYPE_CHECKING:
+    import anndata
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,7 @@ class TaskProfile:
     required_columns: tuple[str, ...]
     recommended_columns: tuple[str, ...]
     checks: tuple[Callable[[pd.DataFrame], list[Issue]], ...] = ()
+    adata_checks: tuple[Callable[[Any], list[Issue]], ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +111,251 @@ def _check_cell_type_exists(df: pd.DataFrame) -> list[Issue]:
 
 
 # ---------------------------------------------------------------------------
+# AnnData-level check helpers
+# ---------------------------------------------------------------------------
+
+
+def _x_is_likely_raw_counts(X: Any) -> bool:
+    """Heuristic: True if X looks like raw counts (non-negative integers)."""
+    try:
+        from scipy import sparse
+
+        if sparse.issparse(X):
+            data = X.data
+            if len(data) == 0:
+                return True
+            sample = data[: min(1000, len(data))]
+            return bool(np.all(sample >= 0) and np.allclose(sample, np.round(sample)))
+    except ImportError:
+        pass
+    arr = np.asarray(X)
+    if arr.size == 0:
+        return True
+    flat = arr.flat[: min(1000, arr.size)]
+    return bool(np.all(flat >= 0) and np.allclose(flat, np.round(flat)))
+
+
+# ---------------------------------------------------------------------------
+# AnnData-level check functions
+# ---------------------------------------------------------------------------
+
+
+def _check_x_exists(adata: anndata.AnnData) -> list[Issue]:
+    """X matrix must exist and be non-empty."""
+    if adata.X is None:
+        return [
+            Issue(
+                severity="error",
+                code="MISSING_X_MATRIX",
+                column=None,
+                message="AnnData has no X matrix — expression data is required",
+                suggestion="Load or assign expression data to adata.X.",
+            )
+        ]
+    if adata.X.shape[0] == 0 or adata.X.shape[1] == 0:
+        return [
+            Issue(
+                severity="error",
+                code="EMPTY_X_MATRIX",
+                column=None,
+                message=f"X matrix is empty (shape {adata.X.shape})",
+                suggestion="Ensure the dataset contains cells and features.",
+            )
+        ]
+    return []
+
+
+def _check_x_is_normalized(adata: anndata.AnnData) -> list[Issue]:
+    """Warn if X appears to be raw counts — clustering/annotation need normalized data."""
+    if adata.X is None:
+        return []
+    if _x_is_likely_raw_counts(adata.X):
+        return [
+            Issue(
+                severity="warning",
+                code="X_APPEARS_RAW",
+                column=None,
+                message=(
+                    "X matrix appears to contain raw counts (non-negative integers) — "
+                    "this task typically expects normalized/log-transformed data"
+                ),
+                suggestion="Run sc.pp.normalize_total() and sc.pp.log1p() first.",
+            )
+        ]
+    return []
+
+
+def _check_x_is_raw_counts(adata: anndata.AnnData) -> list[Issue]:
+    """Warn if X doesn't look like raw counts — DE methods need counts."""
+    if adata.X is None:
+        return []
+    if not _x_is_likely_raw_counts(adata.X):
+        # Check if a counts layer exists as fallback
+        if "counts" in adata.layers:
+            return [
+                Issue(
+                    severity="info",
+                    code="X_NOT_COUNTS_BUT_LAYER_EXISTS",
+                    column=None,
+                    message=(
+                        "X matrix appears normalized but a 'counts' layer exists — "
+                        "DE methods can use the counts layer"
+                    ),
+                )
+            ]
+        return [
+            Issue(
+                severity="warning",
+                code="X_NOT_RAW_COUNTS",
+                column=None,
+                message=(
+                    "X matrix does not appear to contain raw counts — "
+                    "most DE methods (DESeq2, edgeR) require integer counts"
+                ),
+                suggestion="Store raw counts in adata.X or adata.layers['counts'].",
+            )
+        ]
+    return []
+
+
+def _check_counts_layer_exists(adata: anndata.AnnData) -> list[Issue]:
+    """Recommend a counts layer for DE workflows."""
+    if adata.X is None:
+        return []
+    has_counts_layer = "counts" in adata.layers
+    x_is_counts = _x_is_likely_raw_counts(adata.X)
+    if not has_counts_layer and not x_is_counts:
+        return [
+            Issue(
+                severity="warning",
+                code="NO_COUNTS_LAYER",
+                column=None,
+                message=(
+                    "No 'counts' layer found and X is not raw counts — "
+                    "DE analysis requires access to raw count data"
+                ),
+                suggestion="Store raw counts: adata.layers['counts'] = raw_counts.",
+            )
+        ]
+    return []
+
+
+def _check_x_sparsity(adata: anndata.AnnData) -> list[Issue]:
+    """Report X matrix sparsity as informational."""
+    if adata.X is None:
+        return []
+    try:
+        from scipy import sparse
+
+        if sparse.issparse(adata.X):
+            nnz = adata.X.nnz
+            total = adata.X.shape[0] * adata.X.shape[1]
+            if total > 0:
+                sparsity = 1.0 - (nnz / total)
+                return [
+                    Issue(
+                        severity="info",
+                        code="X_SPARSITY",
+                        column=None,
+                        message=f"X matrix is sparse ({sparsity:.0%} zeros, {nnz:,} non-zero entries)",
+                    )
+                ]
+        else:
+            arr = np.asarray(adata.X)
+            total = arr.size
+            if total > 0:
+                n_zero = int((arr == 0).sum())
+                sparsity = n_zero / total
+                fmt = "dense"
+                return [
+                    Issue(
+                        severity="info",
+                        code="X_SPARSITY",
+                        column=None,
+                        message=f"X matrix is {fmt} ({sparsity:.0%} zeros)",
+                    )
+                ]
+    except ImportError:
+        arr = np.asarray(adata.X)
+        total = arr.size
+        if total > 0:
+            n_zero = int((arr == 0).sum())
+            sparsity = n_zero / total
+            return [
+                Issue(
+                    severity="info",
+                    code="X_SPARSITY",
+                    column=None,
+                    message=f"X matrix is dense ({sparsity:.0%} zeros)",
+                )
+            ]
+    return []
+
+
+def _check_min_cells(adata: anndata.AnnData, *, min_cells: int = 50) -> list[Issue]:
+    """Warn if dataset has very few cells."""
+    n_cells = adata.n_obs
+    if n_cells < min_cells:
+        return [
+            Issue(
+                severity="warning",
+                code="LOW_CELL_COUNT",
+                column=None,
+                message=f"Dataset has only {n_cells} cells (recommend >= {min_cells})",
+                suggestion="Consider whether results will be meaningful with so few cells.",
+                row_count=n_cells,
+            )
+        ]
+    return []
+
+
+def _check_cells_per_condition(adata: anndata.AnnData) -> list[Issue]:
+    """Check minimum cell count per condition group for DE."""
+    if "condition" not in adata.obs.columns:
+        return []
+    group_counts = adata.obs["condition"].value_counts()
+    small_groups = group_counts[group_counts < 3]
+    if len(small_groups) > 0:
+        details = ", ".join(
+            f"{name!r}: {count}" for name, count in small_groups.items()
+        )
+        return [
+            Issue(
+                severity="warning",
+                code="LOW_CELLS_PER_CONDITION",
+                column="condition",
+                message=f"Condition group(s) with < 3 cells: {details}",
+                suggestion="DE results may be unreliable with very few cells per group.",
+                row_count=int(small_groups.sum()),
+            )
+        ]
+    return []
+
+
+def _check_cells_per_batch(adata: anndata.AnnData) -> list[Issue]:
+    """Check minimum cell count per batch for integration."""
+    if "batch_id" not in adata.obs.columns:
+        return []
+    group_counts = adata.obs["batch_id"].value_counts()
+    small_groups = group_counts[group_counts < 10]
+    if len(small_groups) > 0:
+        details = ", ".join(
+            f"{name!r}: {count}" for name, count in small_groups.items()
+        )
+        return [
+            Issue(
+                severity="warning",
+                code="LOW_CELLS_PER_BATCH",
+                column="batch_id",
+                message=f"Batch(es) with < 10 cells: {details}",
+                suggestion="Integration may be unreliable with very few cells per batch.",
+                row_count=int(small_groups.sum()),
+            )
+        ]
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Built-in task profiles
 # ---------------------------------------------------------------------------
 
@@ -116,6 +366,12 @@ CLUSTERING = TaskProfile(
     recommended_columns=("batch_id", "sample_id"),
     checks=(
         _check_batch_has_variation,
+    ),
+    adata_checks=(
+        _check_x_exists,
+        _check_x_is_normalized,
+        _check_x_sparsity,
+        _check_min_cells,
     ),
 )
 
@@ -128,6 +384,13 @@ DIFFERENTIAL_EXPRESSION = TaskProfile(
         _check_condition_has_groups,
         _check_replicates_per_condition,
     ),
+    adata_checks=(
+        _check_x_exists,
+        _check_x_is_raw_counts,
+        _check_counts_layer_exists,
+        _check_cells_per_condition,
+        _check_x_sparsity,
+    ),
 )
 
 INTEGRATION = TaskProfile(
@@ -138,6 +401,11 @@ INTEGRATION = TaskProfile(
     checks=(
         _check_batch_has_variation,
     ),
+    adata_checks=(
+        _check_x_exists,
+        _check_x_sparsity,
+        _check_cells_per_batch,
+    ),
 )
 
 CELL_TYPE_ANNOTATION = TaskProfile(
@@ -147,6 +415,12 @@ CELL_TYPE_ANNOTATION = TaskProfile(
     recommended_columns=("tissue", "species"),
     checks=(
         _check_cell_type_exists,
+    ),
+    adata_checks=(
+        _check_x_exists,
+        _check_x_is_normalized,
+        _check_x_sparsity,
+        _check_min_cells,
     ),
 )
 
@@ -177,8 +451,20 @@ def list_tasks() -> list[str]:
 def run_preflight(
     df: pd.DataFrame,
     task: str | TaskProfile,
+    adata: anndata.AnnData | None = None,
 ) -> list[Issue]:
     """Run preflight checks for a downstream task against a DataFrame.
+
+    Parameters
+    ----------
+    df
+        The obs DataFrame to check for required/recommended columns.
+    task
+        Task name or TaskProfile object.
+    adata
+        Optional AnnData object. When provided, matrix-level checks
+        (X properties, layer presence, cell counts per group) are run
+        in addition to the column-level checks.
 
     Returns a list of Issues describing missing requirements, recommendations,
     and task-specific data quality concerns.
@@ -210,8 +496,13 @@ def run_preflight(
                 )
             )
 
-    # Run task-specific checks
+    # Run task-specific obs-level checks
     for check_fn in tp.checks:
         issues.extend(check_fn(df))
+
+    # Run AnnData-level checks when an AnnData object is available
+    if adata is not None:
+        for check_fn in tp.adata_checks:
+            issues.extend(check_fn(adata))
 
     return issues
