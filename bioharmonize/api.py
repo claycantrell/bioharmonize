@@ -512,12 +512,15 @@ def validate(
     df = obs.copy()
     issues = run_validation(df, prof, level=level)
 
-    # Flag columns that look like known aliases but weren't renamed
+    # Flag columns that look like known aliases but weren't renamed.
+    # Also detect conflicts where multiple columns map to the same target.
     alias_lookup = {_normalize_col_name(k): v for k, v in prof.column_aliases.items()}
+    alias_hits: dict[str, list[str]] = {}  # target -> list of source columns
     for col in df.columns:
         normed = _normalize_col_name(col)
         target = alias_lookup.get(normed) or alias_lookup.get(col.lower().strip())
         if target and target not in df.columns:
+            alias_hits.setdefault(target, []).append(col)
             issues.append(
                 Issue(
                     severity="warning",
@@ -528,6 +531,22 @@ def validate(
                         f"Use repair() to rename automatically."
                     ),
                     suggestion=f"Run bh.repair(data) to rename {col!r} → {target!r}.",
+                )
+            )
+
+    # Flag conflicts where multiple columns compete for the same canonical name
+    for target, sources in alias_hits.items():
+        if len(sources) > 1:
+            issues.append(
+                Issue(
+                    severity="error",
+                    code="ALIAS_CONFLICT",
+                    column=target,
+                    message=(
+                        f"Multiple columns map to {target!r}: {sources!r}. "
+                        f"Ambiguous — use column_map to resolve the conflict explicitly."
+                    ),
+                    suggestion=f"Pass column_map={{'{sources[0]}': '{target}'}} to choose which column to keep.",
                 )
             )
 
