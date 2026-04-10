@@ -23,6 +23,24 @@ class Report:
     validation_level: str = "standard"
     adata: anndata.AnnData | None = field(default=None, repr=False)
 
+    @property
+    def readiness(self) -> dict[str, str]:
+        """Per-task readiness assessment: ``{task_name: "ready"|"warning"|"not_ready"}``."""
+        from .preflight import list_tasks, run_preflight
+
+        result: dict[str, str] = {}
+        for task_name in list_tasks():
+            issues = run_preflight(self.cleaned, task_name)
+            has_errors = any(i.severity == "error" for i in issues)
+            has_warnings = any(i.severity == "warning" for i in issues)
+            if has_errors:
+                result[task_name] = "not_ready"
+            elif has_warnings:
+                result[task_name] = "warning"
+            else:
+                result[task_name] = "ready"
+        return result
+
     def summary(self) -> str:
         errors = [i for i in self.issues if i.severity == "error"]
         warnings = [i for i in self.issues if i.severity == "warning"]
@@ -59,6 +77,13 @@ class Report:
                 lines.append(f"    {issue.severity.upper()}{col_str}: {issue.message}")
                 if issue.suggestion:
                     lines.append(f"      suggestion: {issue.suggestion}")
+
+        # Task readiness section
+        rdns = self.readiness
+        lines.append("")
+        lines.append("  task readiness:")
+        for task_name, status in rdns.items():
+            lines.append(f"    {task_name}: {status}")
 
         return "\n".join(lines)
 
