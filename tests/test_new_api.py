@@ -255,15 +255,14 @@ class TestAnnDataInput:
         assert len(report.changes) == 0
 
     def test_repair_accepts_anndata(self, adata):
-        report = bh.repair(adata)
+        repaired_ad, report = bh.repair(adata)
         assert isinstance(report, bh.Report)
         # cleaned is the repaired obs DataFrame
         assert "cell_type" in report.cleaned.columns
         assert report.cleaned["sex"].iloc[0] == "male"
-        # adata field has the repaired AnnData
-        assert report.adata is not None
-        assert report.adata is not adata  # copy=True by default
-        assert "cell_type" in report.adata.obs.columns
+        # returned AnnData is the repaired copy
+        assert repaired_ad is not adata  # copy=True by default
+        assert "cell_type" in repaired_ad.obs.columns
 
     def test_repair_does_not_modify_original_adata(self, adata):
         bh.repair(adata)
@@ -271,10 +270,10 @@ class TestAnnDataInput:
         assert adata.obs["gender"].iloc[0] == "m"
 
     def test_repair_copy_false_modifies_adata(self, adata):
-        report = bh.repair(adata, copy=False)
+        repaired_ad, report = bh.repair(adata, copy=False)
         assert "sex" in adata.obs.columns
         assert adata.obs["sex"].iloc[0] == "male"
-        assert report.adata is adata
+        assert repaired_ad is adata
 
     def test_preflight_accepts_anndata(self, adata):
         report = bh.preflight(adata, task="clustering")
@@ -285,9 +284,9 @@ class TestAnnDataInput:
     def test_repair_preserves_x_matrix(self, adata):
         import numpy as np
 
-        report = bh.repair(adata)
-        assert report.adata.X.shape == (3, 10)
-        assert np.all(report.adata.X == 0)
+        repaired_ad, report = bh.repair(adata)
+        assert repaired_ad.X.shape == (3, 10)
+        assert np.all(repaired_ad.X == 0)
 
     def test_invalid_input_raises(self):
         with pytest.raises(TypeError, match="Expected AnnData or DataFrame"):

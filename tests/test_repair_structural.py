@@ -155,8 +155,8 @@ class TestRepairStructuralAnnData:
                 index=["A", "A", "B"],
             ),
         )
-        report = bh.repair(ad)
-        assert report.adata.obs.index.is_unique
+        repaired_ad, report = bh.repair(ad)
+        assert repaired_ad.obs.index.is_unique
         assert report.cleaned.index.is_unique
 
     def test_strip_whitespace_anndata(self):
@@ -167,17 +167,17 @@ class TestRepairStructuralAnnData:
                 index=[" c0 ", "c1"],
             ),
         )
-        report = bh.repair(ad)
-        assert "c0" in report.adata.obs.index
-        assert " c0 " not in report.adata.obs.index
+        repaired_ad, report = bh.repair(ad)
+        assert "c0" in repaired_ad.obs.index
+        assert " c0 " not in repaired_ad.obs.index
 
     def test_integer_index_anndata(self):
         ad = anndata.AnnData(
             X=np.zeros((2, 3)),
             obs=pd.DataFrame({"cell_type": ["T", "B"]}),
         )
-        report = bh.repair(ad)
-        assert list(report.adata.obs.index) == ["cell_0", "cell_1"]
+        repaired_ad, report = bh.repair(ad)
+        assert list(repaired_ad.obs.index) == ["cell_0", "cell_1"]
 
     def test_preserves_x_matrix_after_structural_repair(self):
         X = np.ones((3, 5))
@@ -188,9 +188,9 @@ class TestRepairStructuralAnnData:
                 index=["A", "A", "B"],
             ),
         )
-        report = bh.repair(ad)
-        assert report.adata.X.shape == (3, 5)
-        assert np.all(report.adata.X == 1)
+        repaired_ad, report = bh.repair(ad)
+        assert repaired_ad.X.shape == (3, 5)
+        assert np.all(repaired_ad.X == 1)
 
 
 # ---------------------------------------------------------------------------

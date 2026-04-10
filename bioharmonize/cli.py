@@ -55,12 +55,16 @@ def _build_cli():
     def repair_cmd(path: str, profile: str, validation: str, output: str):
         """Repair metadata: rename columns, normalise values, validate."""
         data = read_data(path)
-        report = _repair(data, profile=profile, validation=validation)
+        result = _repair(data, profile=profile, validation=validation)
+        if isinstance(result, tuple):
+            repaired_ad, report = result
+        else:
+            repaired_ad, report = None, result
         out_dir = Path(output)
         report.save(out_dir)
-        if report.adata is not None:
+        if repaired_ad is not None:
             h5ad_out = out_dir / "repaired.h5ad"
-            report.adata.write_h5ad(h5ad_out)
+            repaired_ad.write_h5ad(h5ad_out)
             click.echo(f"\nRepaired .h5ad written to: {h5ad_out}")
         click.echo(report.summary())
 

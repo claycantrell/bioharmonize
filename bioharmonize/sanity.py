@@ -248,7 +248,7 @@ def _check_categorical_encoding(adata: anndata.AnnData) -> list[Issue]:
     for col in adata.obs.columns:
         series = adata.obs[col]
         if isinstance(series.dtype, pd.CategoricalDtype):
-            # Check for unused categories
+            # Check for unused categories (always, regardless of dataset size)
             if hasattr(series.cat, "categories"):
                 used = series.dropna().unique()
                 unused = set(series.cat.categories) - set(used)
@@ -266,7 +266,8 @@ def _check_categorical_encoding(adata: anndata.AnnData) -> list[Issue]:
                             suggestion="Remove unused categories with .cat.remove_unused_categories().",
                         )
                     )
-        elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
+        elif n_obs >= 50 and (pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series)):
+            # Only suggest categorical encoding on datasets large enough for it to matter
             n_unique = series.nunique()
             if n_unique > 0 and (n_unique / n_obs) <= _CATEGORICAL_THRESHOLD:
                 issues.append(

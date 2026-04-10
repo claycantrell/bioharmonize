@@ -512,6 +512,25 @@ def validate(
     df = obs.copy()
     issues = run_validation(df, prof, level=level)
 
+    # Flag columns that look like known aliases but weren't renamed
+    alias_lookup = {_normalize_col_name(k): v for k, v in prof.column_aliases.items()}
+    for col in df.columns:
+        normed = _normalize_col_name(col)
+        target = alias_lookup.get(normed) or alias_lookup.get(col.lower().strip())
+        if target and target not in df.columns:
+            issues.append(
+                Issue(
+                    severity="warning",
+                    code="POSSIBLE_ALIAS",
+                    column=col,
+                    message=(
+                        f"Column {col!r} looks like an alias for canonical column {target!r}. "
+                        f"Use repair() to rename automatically."
+                    ),
+                    suggestion=f"Run bh.repair(data) to rename {col!r} → {target!r}.",
+                )
+            )
+
     # Run structural sanity checks when input is AnnData
     if source_adata is not None:
         issues.extend(check_dataset(source_adata))
@@ -534,12 +553,18 @@ def repair(
     value_maps: dict[str, dict[str, str]] | None = None,
     validation: str = "standard",
     copy: bool = True,
-) -> Report:
+    inplace: bool | None = None,
+) -> "Report | tuple[Any, Report]":
     """Rename columns, normalise values, coerce dtypes, then validate.
 
-    When *data* is an ``AnnData``, the returned ``Report.adata`` holds the
-    repaired ``AnnData`` object.
+    When *data* is an ``AnnData``, returns ``(repaired_adata, report)`` tuple.
+    When *data* is a ``DataFrame``, returns a ``Report``.
+
+    The ``inplace`` parameter is an alias for ``not copy`` (pandas/AnnData
+    convention). If both are specified, ``inplace`` takes precedence.
     """
+    if inplace is not None:
+        copy = not inplace
     prof = resolve_profile(profile)
     obs, source_adata = _extract_obs(data)
     result = obs.copy() if copy else obs
@@ -571,7 +596,7 @@ def repair(
 
     repaired_adata = _wrap_adata(result, source_adata, copy)
 
-    return Report(
+    report = Report(
         cleaned=result,
         issues=issues,
         changes=changes,
@@ -580,10 +605,17 @@ def repair(
         adata=repaired_adata,
     )
 
+    # Return (AnnData, Report) tuple when input was AnnData — standard convention
+    if repaired_adata is not None:
+        return repaired_adata, report
+    return report
+
 
 def preflight(
     data: ObsData,
     task: str | TaskProfile,
+    *,
+    profile: str | Profile = "single_cell_human",
 ) -> Report:
     """Check whether a dataset is ready for a downstream analysis task.
 
@@ -597,6 +629,9 @@ def preflight(
     task : str or TaskProfile
         Name of a built-in task ('clustering', 'differential_expression',
         'integration', 'cell_type_annotation') or a custom TaskProfile.
+    profile : str or Profile
+        Metadata profile for context (currently unused by preflight checks
+        but accepted for API consistency).
 
     Returns
     -------
@@ -629,8 +664,11 @@ def clean_obs(
     validation: str = "standard",
     copy: bool = True,
 ) -> Report:
-    """Clean and validate obs metadata.  Alias for :func:`repair`."""
-    return repair(
+    """Clean and validate obs metadata.  Alias for :func:`repair`.
+
+    Always returns a Report (not a tuple), for backward compatibility.
+    """
+    result = repair(
         data,
         profile=profile,
         column_map=column_map,
@@ -638,6 +676,9 @@ def clean_obs(
         validation=validation,
         copy=copy,
     )
+    if isinstance(result, tuple):
+        return result[1]  # Return the Report, not the AnnData
+    return result
 
 
 def validate_obs(

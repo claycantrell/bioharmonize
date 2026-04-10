@@ -24,6 +24,21 @@ class Report:
     adata: anndata.AnnData | None = field(default=None, repr=False)
 
     @property
+    def ready(self) -> bool:
+        """True if no error-severity issues exist (quick readiness check)."""
+        return not any(i.severity == "error" for i in self.issues)
+
+    @property
+    def blockers(self) -> list[Issue]:
+        """Error-severity issues that block readiness."""
+        return [i for i in self.issues if i.severity == "error"]
+
+    @property
+    def warnings(self) -> list[Issue]:
+        """Warning-severity issues."""
+        return [i for i in self.issues if i.severity == "warning"]
+
+    @property
     def readiness(self) -> dict[str, str]:
         """Per-task readiness assessment: ``{task_name: "ready"|"warning"|"not_ready"}``."""
         from .preflight import list_tasks, run_preflight
