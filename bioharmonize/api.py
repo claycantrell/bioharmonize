@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Union
 
+import numpy as np
 import pandas as pd
 
 from .changes import Change
@@ -10,6 +11,7 @@ from .issues import Issue
 from .preflight import TaskProfile, resolve_task, run_preflight
 from .profiles import Profile, resolve_profile
 from .report import Report
+from .sanity import check_dataset
 from .validators import run_validation
 
 if TYPE_CHECKING:
@@ -35,6 +37,141 @@ def _extract_obs(data: ObsData) -> tuple[pd.DataFrame, Any]:
     if isinstance(data, pd.DataFrame):
         return data, None
     raise TypeError(f"Expected AnnData or DataFrame, got {type(data).__name__}")
+
+
+def _guess_data_state(adata: Any) -> str:
+    """Heuristic to guess whether X holds raw counts, normalized, or log-transformed data."""
+    if adata.X is None or adata.X.shape[0] == 0 or adata.X.shape[1] == 0:
+        return "empty"
+
+    X = adata.X
+    try:
+        from scipy import sparse
+
+        if sparse.issparse(X):
+            sample = np.asarray(X[:min(500, X.shape[0])].todense())
+        else:
+            sample = np.asarray(X[:min(500, X.shape[0])])
+    except ImportError:
+        sample = np.asarray(X[:min(500, X.shape[0])])
+
+    finite = sample[np.isfinite(sample)]
+    if finite.size == 0:
+        return "empty (all NaN/Inf)"
+
+    has_negative = bool(finite.min() < 0)
+    max_val = float(finite.max())
+    is_integer = bool(np.allclose(finite, np.round(finite)))
+
+    if has_negative:
+        return "scaled (negative values present)"
+    if is_integer and max_val > 0:
+        return "raw counts (integer values)"
+    if max_val <= 20:
+        return "log-normalized (small positive floats)"
+    return "normalized or transformed"
+
+
+def _dataset_diagnostics(adata: Any) -> list[Issue]:
+    """Generate informational diagnostics for an AnnData object."""
+    issues: list[Issue] = []
+
+    # Shape
+    issues.append(
+        Issue(
+            severity="info",
+            code="DATASET_SHAPE",
+            column=None,
+            message=f"{adata.n_obs} cells \u00d7 {adata.n_vars} features",
+        )
+    )
+
+    # Layers
+    layer_names = list(adata.layers.keys()) if adata.layers else []
+    if layer_names:
+        issues.append(
+            Issue(
+                severity="info",
+                code="DATASET_LAYERS",
+                column=None,
+                message=f"Layers: {', '.join(sorted(layer_names))}",
+            )
+        )
+    else:
+        issues.append(
+            Issue(
+                severity="info",
+                code="DATASET_LAYERS",
+                column=None,
+                message="No additional layers (X only)",
+            )
+        )
+
+    # Key obs columns
+    obs_cols = list(adata.obs.columns)
+    if obs_cols:
+        issues.append(
+            Issue(
+                severity="info",
+                code="OBS_COLUMNS",
+                column=None,
+                message=f"obs columns ({len(obs_cols)}): {', '.join(obs_cols)}",
+            )
+        )
+    else:
+        issues.append(
+            Issue(
+                severity="info",
+                code="OBS_COLUMNS",
+                column=None,
+                message="obs has no annotation columns",
+            )
+        )
+
+    # Key var columns
+    var_cols = list(adata.var.columns)
+    if var_cols:
+        issues.append(
+            Issue(
+                severity="info",
+                code="VAR_COLUMNS",
+                column=None,
+                message=f"var columns ({len(var_cols)}): {', '.join(var_cols)}",
+            )
+        )
+
+    # Missingness stats
+    obs_df = adata.obs
+    if not obs_df.empty and len(obs_df.columns) > 0:
+        missing = obs_df.isnull().sum()
+        cols_with_missing = missing[missing > 0]
+        if not cols_with_missing.empty:
+            n_rows = len(obs_df)
+            parts = [
+                f"{col}: {count}/{n_rows} ({count / n_rows:.0%})"
+                for col, count in cols_with_missing.items()
+            ]
+            issues.append(
+                Issue(
+                    severity="info",
+                    code="OBS_MISSINGNESS",
+                    column=None,
+                    message=f"Missing values in obs \u2014 {', '.join(parts)}",
+                )
+            )
+
+    # Likely data state
+    state = _guess_data_state(adata)
+    issues.append(
+        Issue(
+            severity="info",
+            code="DATA_STATE",
+            column=None,
+            message=f"Likely data state: {state}",
+        )
+    )
+
+    return issues
 
 
 def _build_rename_map(
@@ -275,6 +412,10 @@ def inspect(
     issues: list[Issue] = list(conflict_issues)
     issues.extend(run_validation(df, prof, level="minimal"))
 
+    # AnnData-specific diagnostics: shape, layers, missingness, data state
+    if source_adata is not None:
+        issues.extend(_dataset_diagnostics(source_adata))
+
     return Report(
         cleaned=obs.copy(),
         issues=issues,
@@ -299,6 +440,11 @@ def validate(
     obs, source_adata = _extract_obs(data)
     df = obs.copy()
     issues = run_validation(df, prof, level=level)
+
+    # Run structural sanity checks when input is AnnData
+    if source_adata is not None:
+        issues.extend(check_dataset(source_adata))
+
     return Report(
         cleaned=df,
         issues=issues,

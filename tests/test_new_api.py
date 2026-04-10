@@ -295,6 +295,218 @@ class TestAnnDataInput:
 
 
 # ---------------------------------------------------------------------------
+# inspect() diagnostics for AnnData
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestInspectDiagnostics:
+    def test_reports_shape(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((50, 200)),
+            obs=pd.DataFrame({"cell_type": [f"T{i}" for i in range(50)]},
+                             index=[f"c{i}" for i in range(50)]),
+        )
+        report = bh.inspect(ad)
+        shape_issues = [i for i in report.issues if i.code == "DATASET_SHAPE"]
+        assert len(shape_issues) == 1
+        assert "50 cells" in shape_issues[0].message
+        assert "200 features" in shape_issues[0].message
+
+    def test_reports_layers(self):
+        import anndata
+        import numpy as np
+
+        X = np.ones((5, 3))
+        ad = anndata.AnnData(
+            X=X,
+            obs=pd.DataFrame(index=[f"c{i}" for i in range(5)]),
+        )
+        ad.layers["raw"] = X.copy()
+        ad.layers["normalized"] = X * 0.5
+        report = bh.inspect(ad)
+        layer_issues = [i for i in report.issues if i.code == "DATASET_LAYERS"]
+        assert len(layer_issues) == 1
+        assert "normalized" in layer_issues[0].message
+        assert "raw" in layer_issues[0].message
+
+    def test_reports_no_layers(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((5, 3)),
+            obs=pd.DataFrame(index=[f"c{i}" for i in range(5)]),
+        )
+        report = bh.inspect(ad)
+        layer_issues = [i for i in report.issues if i.code == "DATASET_LAYERS"]
+        assert len(layer_issues) == 1
+        assert "No additional layers" in layer_issues[0].message
+
+    def test_reports_obs_columns(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((3, 5)),
+            obs=pd.DataFrame(
+                {"cell_type": ["T", "B", "NK"], "batch": ["A", "B", "A"]},
+                index=["c0", "c1", "c2"],
+            ),
+        )
+        report = bh.inspect(ad)
+        obs_issues = [i for i in report.issues if i.code == "OBS_COLUMNS"]
+        assert len(obs_issues) == 1
+        assert "cell_type" in obs_issues[0].message
+        assert "batch" in obs_issues[0].message
+
+    def test_reports_missingness(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((4, 3)),
+            obs=pd.DataFrame(
+                {"cell_type": ["T", None, "NK", "B"], "batch": ["A", "B", None, None]},
+                index=["c0", "c1", "c2", "c3"],
+            ),
+        )
+        report = bh.inspect(ad)
+        miss_issues = [i for i in report.issues if i.code == "OBS_MISSINGNESS"]
+        assert len(miss_issues) == 1
+        assert "cell_type" in miss_issues[0].message
+        assert "batch" in miss_issues[0].message
+
+    def test_no_missingness_when_complete(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((3, 5)),
+            obs=pd.DataFrame(
+                {"cell_type": ["T", "B", "NK"]},
+                index=["c0", "c1", "c2"],
+            ),
+        )
+        report = bh.inspect(ad)
+        miss_issues = [i for i in report.issues if i.code == "OBS_MISSINGNESS"]
+        assert len(miss_issues) == 0
+
+    def test_reports_data_state_raw(self):
+        import anndata
+        import numpy as np
+
+        rng = np.random.default_rng(42)
+        X = rng.integers(0, 1000, size=(20, 10)).astype(float)
+        ad = anndata.AnnData(
+            X=X,
+            obs=pd.DataFrame(index=[f"c{i}" for i in range(20)]),
+        )
+        report = bh.inspect(ad)
+        state_issues = [i for i in report.issues if i.code == "DATA_STATE"]
+        assert len(state_issues) == 1
+        assert "raw counts" in state_issues[0].message
+
+    def test_reports_data_state_scaled(self):
+        import anndata
+        import numpy as np
+
+        rng = np.random.default_rng(42)
+        X = rng.standard_normal((20, 10))
+        ad = anndata.AnnData(
+            X=X,
+            obs=pd.DataFrame(index=[f"c{i}" for i in range(20)]),
+        )
+        report = bh.inspect(ad)
+        state_issues = [i for i in report.issues if i.code == "DATA_STATE"]
+        assert len(state_issues) == 1
+        assert "scaled" in state_issues[0].message
+
+    def test_no_diagnostics_for_dataframe(self):
+        df = _make_df(cell_type=["T cell"])
+        report = bh.inspect(df)
+        diag_codes = {"DATASET_SHAPE", "DATASET_LAYERS", "OBS_COLUMNS", "DATA_STATE"}
+        found = [i for i in report.issues if i.code in diag_codes]
+        assert len(found) == 0
+
+
+# ---------------------------------------------------------------------------
+# validate() with sanity checks for AnnData
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not HAS_ANNDATA, reason="anndata not installed")
+class TestValidateSanityChecks:
+    def test_runs_sanity_checks_on_anndata(self):
+        import anndata
+        import numpy as np
+
+        X = np.zeros((5, 3))
+        X[:, 0] = 1  # columns 1 and 2 are all-zero
+        ad = anndata.AnnData(
+            X=X,
+            obs=pd.DataFrame(
+                {"cell_type": ["T"] * 5},
+                index=["c0", "c0", "c2", "c3", "c4"],  # duplicate ids
+            ),
+            var=pd.DataFrame(index=["g0", "g1", "g2"]),
+        )
+        report = bh.validate(ad)
+        codes = {i.code for i in report.issues}
+        assert "DUPLICATE_CELL_IDS" in codes
+        assert "ALL_ZERO_FEATURES" in codes
+
+    def test_no_sanity_checks_for_dataframe(self):
+        df = _make_df(cell_type=["T cell"])
+        report = bh.validate(df)
+        sanity_codes = {
+            "OBS_MATRIX_SHAPE_MISMATCH", "DUPLICATE_CELL_IDS",
+            "ALL_ZERO_FEATURES", "LAYER_SHAPE_MISMATCH",
+        }
+        found = [i for i in report.issues if i.code in sanity_codes]
+        assert len(found) == 0
+
+    def test_clean_anndata_no_sanity_errors(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((5, 3)),
+            obs=pd.DataFrame(
+                {"cell_type": ["T", "B", "NK", "T", "B"],
+                 "sample_id": [f"S{i}" for i in range(5)],
+                 "donor_id": [f"D{i}" for i in range(5)],
+                 "condition": ["control"] * 5,
+                 "sex": ["male"] * 5},
+                index=[f"cell_{i}" for i in range(5)],
+            ),
+            var=pd.DataFrame(index=["TP53", "BRCA1", "EGFR"]),
+        )
+        report = bh.validate(ad, level="strict")
+        errors = [i for i in report.issues if i.severity == "error"]
+        assert len(errors) == 0
+
+    def test_validate_still_validates_metadata_for_anndata(self):
+        import anndata
+        import numpy as np
+
+        ad = anndata.AnnData(
+            X=np.ones((3, 5)),
+            obs=pd.DataFrame(
+                {"batch_id": ["B1", "B2", "B3"]},
+                index=["c0", "c1", "c2"],
+            ),
+        )
+        report = bh.validate(ad, level="standard")
+        # Should still catch missing required metadata columns
+        codes = {i.code for i in report.issues}
+        assert "MISSING_REQUIRED_COLUMN" in codes
+
+
+# ---------------------------------------------------------------------------
 # CLI commands for new API
 # ---------------------------------------------------------------------------
 
